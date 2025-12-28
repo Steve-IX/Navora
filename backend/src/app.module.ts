@@ -10,8 +10,10 @@ import { LocationsModule } from './locations/locations.module';
 import { RoutesModule } from './routes/routes.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { DatabaseConfig } from './config/database.config';
+import { AppController } from './app.controller';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
