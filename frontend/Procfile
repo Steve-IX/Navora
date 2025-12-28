@@ -1,2 +1,2 @@
-web: npx serve dist -s -l $PORT
+web: npx serve -s dist -l $PORT
 
