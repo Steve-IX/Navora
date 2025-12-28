@@ -17,7 +17,9 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
       synchronize: this.configService.get('NODE_ENV') !== 'production',
       logging: this.configService.get('NODE_ENV') === 'development',
-      ssl: this.configService.get('DB_SSL') === 'true',
+      ssl: this.configService.get('DB_SSL') === 'true' ? {
+        rejectUnauthorized: false,
+      } : false,
       extra: {
         // PostGIS extension
         max: 20,
