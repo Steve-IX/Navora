@@ -2,7 +2,7 @@ import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { RoutingService } from './routing.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoutingRequest } from '@shared/types/routing';
-import { IsArray, IsNotEmpty, ValidateNested, IsEnum } from 'class-validator';
+import { IsArray, IsNotEmpty, ValidateNested, IsEnum, IsOptional, IsBoolean, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RoutingProfile } from '@shared/types/routing';
 
@@ -10,6 +10,7 @@ class RouteWaypointDto {
   @IsNotEmpty()
   coordinates: { longitude: number; latitude: number };
 
+  @IsOptional()
   name?: string;
 }
 
@@ -22,9 +23,20 @@ class RoutingRequestDto implements RoutingRequest {
   @IsEnum(['driving', 'walking', 'cycling', 'driving-traffic', 'transit'])
   profile: RoutingProfile;
 
+  @IsOptional()
+  @IsBoolean()
   alternatives?: boolean;
+
+  @IsOptional()
+  @IsIn(['geojson', 'polyline'])
   geometries?: 'geojson' | 'polyline';
+
+  @IsOptional()
+  @IsIn(['full', 'simplified', 'false'])
   overview?: 'full' | 'simplified' | 'false';
+
+  @IsOptional()
+  @IsBoolean()
   steps?: boolean;
 }
 
