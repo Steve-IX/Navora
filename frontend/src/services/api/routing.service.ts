@@ -5,6 +5,25 @@ import { mapboxDirectService } from '../mapbox.service';
 // Check if running in demo mode (frontend-only, no backend)
 const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.env.VITE_API_URL;
 
+// AviationStack API key for flight routing
+const AVIATIONSTACK_API_KEY = import.meta.env.VITE_AVIATIONSTACK_API_KEY || '';
+
+// Major airports by region for fallback
+const MAJOR_AIRPORTS = [
+  { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781 },
+  { iata: 'LAX', name: 'Los Angeles International', lat: 33.9425, lng: -118.4081 },
+  { iata: 'ORD', name: "Chicago O'Hare International", lat: 41.9742, lng: -87.9073 },
+  { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543 },
+  { iata: 'CDG', name: 'Paris Charles de Gaulle', lat: 49.0097, lng: 2.5479 },
+  { iata: 'FRA', name: 'Frankfurt Airport', lat: 50.0379, lng: 8.5622 },
+  { iata: 'DXB', name: 'Dubai International', lat: 25.2532, lng: 55.3657 },
+  { iata: 'HND', name: 'Tokyo Haneda', lat: 35.5494, lng: 139.7798 },
+  { iata: 'SIN', name: 'Singapore Changi', lat: 1.3644, lng: 103.9915 },
+  { iata: 'SYD', name: 'Sydney Airport', lat: -33.9399, lng: 151.1753 },
+  { iata: 'GRU', name: 'São Paulo Guarulhos', lat: -23.4356, lng: -46.4731 },
+  { iata: 'JNB', name: 'Johannesburg O.R. Tambo', lat: -26.1392, lng: 28.2460 },
+];
+
 /**
  * Calculate great-circle distance between two points using Haversine formula
  * Returns distance in meters
@@ -105,9 +124,123 @@ function generateGreatCirclePath(
 }
 
 /**
- * Calculate flight route using great-circle distance (for demo mode)
+ * Find nearest airport to given coordinates
  */
-function calculateFlightRoute(waypoints: Array<{ coordinates: { longitude: number; latitude: number }; name?: string }>): RoutingResponse {
+function findNearestAirport(coordinates: { longitude: number; latitude: number }): {
+  iata: string;
+  name: string;
+  lat: number;
+  lng: number;
+} {
+  let nearestAirport = MAJOR_AIRPORTS[0];
+  let minDistance = Infinity;
+
+  for (const airport of MAJOR_AIRPORTS) {
+    const distance = calculateGreatCircleDistance(
+      coordinates,
+      { longitude: airport.lng, latitude: airport.lat },
+    );
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestAirport = airport;
+    }
+  }
+
+  return nearestAirport;
+}
+
+/**
+ * Get flight information from AviationStack API
+ */
+async function getFlightInfoFromAviationStack(
+  departure: { coordinates: { longitude: number; latitude: number }; name?: string },
+  arrival: { coordinates: { longitude: number; latitude: number }; name?: string },
+): Promise<{
+  airline: string;
+  airlineIata: string;
+  flightNumber: string;
+  departureAirport: string;
+  departureIata: string;
+  arrivalAirport: string;
+  arrivalIata: string;
+  scheduledDeparture: string;
+  scheduledArrival: string;
+  flightStatus: string;
+  aircraft: string;
+  duration: number;
+} | null> {
+  if (!AVIATIONSTACK_API_KEY) {
+    return null;
+  }
+
+  try {
+    const depAirport = findNearestAirport(departure.coordinates);
+    const arrAirport = findNearestAirport(arrival.coordinates);
+
+    // Note: AviationStack free tier only supports HTTP, not HTTPS
+    const url = `http://api.aviationstack.com/v1/flights?access_key=${AVIATIONSTACK_API_KEY}&dep_iata=${depAirport.iata}&arr_iata=${arrAirport.iata}&limit=1`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error || !data.data || data.data.length === 0) {
+      // No direct flights found, return airport info with estimated duration
+      const distance = calculateGreatCircleDistance(departure.coordinates, arrival.coordinates);
+      return {
+        airline: 'Direct flight',
+        airlineIata: '',
+        flightNumber: '',
+        departureAirport: depAirport.name,
+        departureIata: depAirport.iata,
+        arrivalAirport: arrAirport.name,
+        arrivalIata: arrAirport.iata,
+        scheduledDeparture: '',
+        scheduledArrival: '',
+        flightStatus: 'estimated',
+        aircraft: '',
+        duration: distance / 250 + 3600,
+      };
+    }
+
+    const flight = data.data[0];
+    
+    // Calculate duration from scheduled times if available
+    let duration = calculateGreatCircleDistance(departure.coordinates, arrival.coordinates) / 250 + 3600;
+    if (flight.departure?.scheduled && flight.arrival?.scheduled) {
+      const depTime = new Date(flight.departure.scheduled).getTime();
+      const arrTime = new Date(flight.arrival.scheduled).getTime();
+      if (arrTime > depTime) {
+        duration = (arrTime - depTime) / 1000; // Convert to seconds
+      }
+    }
+
+    return {
+      airline: flight.airline?.name || 'Unknown Airline',
+      airlineIata: flight.airline?.iata || '',
+      flightNumber: flight.flight?.iata || flight.flight?.number || '',
+      departureAirport: flight.departure?.airport || depAirport.name,
+      departureIata: flight.departure?.iata || depAirport.iata,
+      arrivalAirport: flight.arrival?.airport || arrAirport.name,
+      arrivalIata: flight.arrival?.iata || arrAirport.iata,
+      scheduledDeparture: flight.departure?.scheduled || '',
+      scheduledArrival: flight.arrival?.scheduled || '',
+      flightStatus: flight.flight_status || 'scheduled',
+      aircraft: flight.aircraft?.registration || '',
+      duration,
+    };
+  } catch (error) {
+    console.error('Error fetching flight data from AviationStack:', error);
+    return null;
+  }
+}
+
+/**
+ * Calculate flight route using AviationStack API or great-circle distance fallback
+ */
+async function calculateFlightRoute(
+  waypoints: Array<{ coordinates: { longitude: number; latitude: number }; name?: string }>
+): Promise<RoutingResponse> {
   const coordinates: Array<{ longitude: number; latitude: number }> = [];
   let totalDistance = 0;
 
@@ -129,10 +262,23 @@ function calculateFlightRoute(waypoints: Array<{ coordinates: { longitude: numbe
   // Average commercial flight speed: ~900 km/h (250 m/s)
   // Add 1 hour for takeoff/landing procedures
   const flightSpeedMps = 250; // meters per second
-  const flightDuration = totalDistance / flightSpeedMps + 3600; // +1 hour for procedures
+  let flightDuration = totalDistance / flightSpeedMps + 3600; // +1 hour for procedures
 
   // Create a smooth great-circle path
   const routeCoordinates = generateGreatCirclePath(coordinates);
+
+  // Try to get real flight data from AviationStack
+  let flightInfo = null;
+  if (waypoints.length === 2) {
+    try {
+      flightInfo = await getFlightInfoFromAviationStack(waypoints[0], waypoints[1]);
+      if (flightInfo?.duration) {
+        flightDuration = flightInfo.duration;
+      }
+    } catch (error) {
+      console.warn('Failed to get flight info from AviationStack:', error);
+    }
+  }
 
   return {
     code: 'Ok',
@@ -148,7 +294,9 @@ function calculateFlightRoute(waypoints: Array<{ coordinates: { longitude: numbe
         steps: [{
           distance: totalDistance,
           duration: flightDuration,
-          instruction: 'Fly direct to destination',
+          instruction: flightInfo 
+            ? `Flight ${flightInfo.airline} ${flightInfo.flightNumber} from ${flightInfo.departureAirport} to ${flightInfo.arrivalAirport}`
+            : 'Fly direct to destination',
           maneuver: {
             type: 'depart',
             location: waypoints[0].coordinates,
@@ -157,6 +305,19 @@ function calculateFlightRoute(waypoints: Array<{ coordinates: { longitude: numbe
       }],
       weight: flightDuration,
       weightName: 'duration',
+      flightInfo: flightInfo ? {
+        airline: flightInfo.airline,
+        airlineIata: flightInfo.airlineIata,
+        flightNumber: flightInfo.flightNumber,
+        departureAirport: flightInfo.departureAirport,
+        departureIata: flightInfo.departureIata,
+        arrivalAirport: flightInfo.arrivalAirport,
+        arrivalIata: flightInfo.arrivalIata,
+        scheduledDeparture: flightInfo.scheduledDeparture,
+        scheduledArrival: flightInfo.scheduledArrival,
+        flightStatus: flightInfo.flightStatus,
+        aircraft: flightInfo.aircraft,
+      } : undefined,
     }],
     waypoints: waypoints.map((wp) => ({
       location: wp.coordinates,

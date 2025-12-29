@@ -38,6 +38,20 @@ export interface Route {
   legs: RouteLeg[];
   weight: number;
   weightName: string;
+  // Flight-specific fields (optional, only present for flight routes)
+  flightInfo?: {
+    airline?: string;
+    airlineIata?: string;
+    flightNumber?: string;
+    departureAirport?: string;
+    departureIata?: string;
+    arrivalAirport?: string;
+    arrivalIata?: string;
+    scheduledDeparture?: string;
+    scheduledArrival?: string;
+    flightStatus?: string;
+    aircraft?: string;
+  };
 }
 
 export interface RoutingRequest {

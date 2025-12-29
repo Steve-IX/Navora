@@ -256,6 +256,70 @@ export const RoutePlanner: React.FC = () => {
 
             {selectedRoute && (
               <div className="border-t pt-4 space-y-2">
+                {/* Flight Information (if available) */}
+                {selectedRoute.flightInfo && (
+                  <div className="bg-blue-50 p-3 rounded-lg space-y-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">✈️</span>
+                      <span className="font-semibold text-blue-900">
+                        {selectedRoute.flightInfo.airline}
+                        {selectedRoute.flightInfo.flightNumber && ` ${selectedRoute.flightInfo.flightNumber}`}
+                      </span>
+                    </div>
+                    <div className="text-sm text-blue-800 space-y-1">
+                      <div className="flex justify-between">
+                        <span>From:</span>
+                        <span className="font-medium">
+                          {selectedRoute.flightInfo.departureAirport}
+                          {selectedRoute.flightInfo.departureIata && ` (${selectedRoute.flightInfo.departureIata})`}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>To:</span>
+                        <span className="font-medium">
+                          {selectedRoute.flightInfo.arrivalAirport}
+                          {selectedRoute.flightInfo.arrivalIata && ` (${selectedRoute.flightInfo.arrivalIata})`}
+                        </span>
+                      </div>
+                      {selectedRoute.flightInfo.scheduledDeparture && (
+                        <div className="flex justify-between">
+                          <span>Departure:</span>
+                          <span className="font-medium">
+                            {new Date(selectedRoute.flightInfo.scheduledDeparture).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRoute.flightInfo.scheduledArrival && (
+                        <div className="flex justify-between">
+                          <span>Arrival:</span>
+                          <span className="font-medium">
+                            {new Date(selectedRoute.flightInfo.scheduledArrival).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRoute.flightInfo.flightStatus && (
+                        <div className="flex justify-between">
+                          <span>Status:</span>
+                          <span className={`font-medium capitalize ${
+                            selectedRoute.flightInfo.flightStatus === 'active' ? 'text-green-600' :
+                            selectedRoute.flightInfo.flightStatus === 'scheduled' ? 'text-blue-600' :
+                            selectedRoute.flightInfo.flightStatus === 'landed' ? 'text-gray-600' :
+                            'text-orange-600'
+                          }`}>
+                            {selectedRoute.flightInfo.flightStatus}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRoute.flightInfo.aircraft && (
+                        <div className="flex justify-between">
+                          <span>Aircraft:</span>
+                          <span className="font-medium">{selectedRoute.flightInfo.aircraft}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center">
                   <span className="font-medium">Distance:</span>
                   <span>{formatDistance(selectedRoute.distance)}</span>
