@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useLocationStore } from '@/stores/locationStore';
 import { useMapStore } from '@/stores/mapStore';
 import { locationService } from '@/services/locationService';
@@ -19,8 +19,7 @@ export const GPSIndicator: React.FC = () => {
     setError,
   } = useLocationStore();
 
-  const { setCenter, setZoom, addMarker, removeMarker } = useMapStore();
-  const locationMarkerId = useRef<string | null>(null);
+  const { setCenter, setZoom } = useMapStore();
 
   useEffect(() => {
     // Auto-start tracking on mount (like Google Maps)
@@ -64,18 +63,6 @@ export const GPSIndicator: React.FC = () => {
       setCenter(initialLocation.coordinates);
       setZoom(12); // Zoom in when we have a specific location
 
-      // Add/update marker
-      if (locationMarkerId.current) {
-        removeMarker(locationMarkerId.current);
-      }
-      locationMarkerId.current = 'user-location';
-      addMarker({
-        id: locationMarkerId.current,
-        coordinates: initialLocation.coordinates,
-        title: 'Your Location',
-        color: '#ef4444',
-      });
-
       // Only start continuous tracking if browser geolocation is supported
       // IP geolocation doesn't support watchPosition
       if (navigator.geolocation) {
@@ -85,18 +72,7 @@ export const GPSIndicator: React.FC = () => {
             setAccuracy(location.accuracy ?? null);
             setHeading(location.heading ?? null);
             setSpeed(location.speed ?? null);
-
-            // Update marker
-            if (locationMarkerId.current) {
-              removeMarker(locationMarkerId.current);
-            }
-            locationMarkerId.current = 'user-location';
-            addMarker({
-              id: locationMarkerId.current,
-              coordinates: location.coordinates,
-              title: 'Your Location',
-              color: '#ef4444',
-            });
+            // MapView will automatically update the visual indicator
           });
           setIsTracking(true);
         } catch (trackError) {
@@ -120,10 +96,7 @@ export const GPSIndicator: React.FC = () => {
   const handleStopTracking = () => {
     locationService.stopTracking();
     setIsTracking(false);
-    if (locationMarkerId.current) {
-      removeMarker(locationMarkerId.current);
-      locationMarkerId.current = null;
-    }
+    // MapView will automatically remove the visual indicator when isTracking is false
   };
 
   const handleRecenter = () => {

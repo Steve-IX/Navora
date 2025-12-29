@@ -3,6 +3,7 @@ import { Place } from '@shared/types/places';
 import { useMapStore } from '@/stores/mapStore';
 import { ShareButton } from '../sharing/ShareButton';
 import { placesService } from '@/services/api/places.service';
+import { getPlaceholderImage, getPlaceholderThumbnail } from '@/utils/placeholders';
 
 interface PlaceDetailsProps {
   place: Place;
@@ -72,8 +73,8 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
             alt={displayPlace.name}
             className="w-full h-full object-cover"
             onError={(e) => {
-              // Fallback to placeholder if image fails to load
-              (e.target as HTMLImageElement).src = `https://via.placeholder.com/800x600?text=${encodeURIComponent(displayPlace.name)}`;
+              // Fallback to local placeholder if image fails to load
+              (e.target as HTMLImageElement).src = getPlaceholderImage(displayPlace.name, 800, 600);
             }}
           />
           {displayPlace.photos.length > 1 && (
@@ -92,7 +93,8 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
                       alt={`${displayPlace.name} ${index + 1}`}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = `https://via.placeholder.com/100?text=${index + 1}`;
+                        // Fallback to local placeholder if image fails to load
+                        (e.target as HTMLImageElement).src = getPlaceholderThumbnail(index, 100, 100);
                       }}
                     />
                   </button>

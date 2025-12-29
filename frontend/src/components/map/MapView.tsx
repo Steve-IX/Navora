@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useMapStore } from '@/stores/mapStore';
+import { useLocationStore } from '@/stores/locationStore';
 import { Coordinates } from '@shared/types/geocoding';
 import { MapLayer } from '@shared/types/map';
 
@@ -17,6 +18,8 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const userLocationMarker = useRef<mapboxgl.Marker | null>(null);
+  const userLocationAccuracySource = useRef<string | null>(null);
 
   const {
     center,
@@ -32,6 +35,8 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     setBearing,
     setPitch,
   } = useMapStore();
+
+  const { currentLocation, accuracy, isTracking } = useLocationStore();
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -465,6 +470,165 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     });
   }, [routes, isLoaded]);
 
+  // Create custom user location marker element with pulsing animation
+  const createUserLocationMarker = (): HTMLElement => {
+    const el = document.createElement('div');
+    el.className = 'user-location-marker';
+    el.style.width = '20px';
+    el.style.height = '20px';
+    el.style.borderRadius = '50%';
+    el.style.backgroundColor = '#4285f4';
+    el.style.border = '3px solid white';
+    el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+    el.style.cursor = 'pointer';
+    
+    // Add pulsing animation
+    const pulse = document.createElement('div');
+    pulse.className = 'user-location-pulse';
+    pulse.style.position = 'absolute';
+    pulse.style.top = '50%';
+    pulse.style.left = '50%';
+    pulse.style.transform = 'translate(-50%, -50%)';
+    pulse.style.width = '20px';
+    pulse.style.height = '20px';
+    pulse.style.borderRadius = '50%';
+    pulse.style.backgroundColor = '#4285f4';
+    pulse.style.opacity = '0.4';
+    pulse.style.animation = 'pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite';
+    el.appendChild(pulse);
+    
+    return el;
+  };
+
+  // Update user location marker and accuracy circle
+  useEffect(() => {
+    if (!map.current || !isLoaded) return;
+
+    // Remove existing marker
+    if (userLocationMarker.current) {
+      userLocationMarker.current.remove();
+      userLocationMarker.current = null;
+    }
+
+    // Remove existing accuracy circle
+    if (userLocationAccuracySource.current) {
+      const sourceId = userLocationAccuracySource.current;
+      if (map.current.getLayer('user-location-accuracy')) {
+        map.current.removeLayer('user-location-accuracy');
+      }
+      if (map.current.getSource(sourceId)) {
+        map.current.removeSource(sourceId);
+      }
+      userLocationAccuracySource.current = null;
+    }
+
+    // Add marker if location is available and tracking
+    if (currentLocation && isTracking) {
+      const markerEl = createUserLocationMarker();
+      userLocationMarker.current = new mapboxgl.Marker({
+        element: markerEl,
+        anchor: 'center',
+      })
+        .setLngLat([currentLocation.longitude, currentLocation.latitude])
+        .addTo(map.current);
+
+      // Add accuracy circle if accuracy data is available
+      if (accuracy && accuracy > 0) {
+        const sourceId = 'user-location-accuracy';
+        userLocationAccuracySource.current = sourceId;
+
+        // Convert accuracy (meters) to approximate degrees
+        // Rough approximation: 1 degree latitude ≈ 111,000 meters
+        const radiusInDegrees = accuracy / 111000;
+
+        map.current.addSource(sourceId, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [currentLocation.longitude, currentLocation.latitude],
+            },
+            properties: {
+              radius: radiusInDegrees,
+            },
+          },
+        });
+
+        // Create circle using a buffer (approximation)
+        const circle = createCircle([currentLocation.longitude, currentLocation.latitude], radiusInDegrees, 64);
+        
+        const source = map.current.getSource(sourceId) as mapboxgl.GeoJSONSource;
+        if (source && source.setData) {
+          source.setData({
+            type: 'Feature',
+            geometry: circle,
+            properties: {},
+          } as GeoJSON.Feature);
+        }
+
+        if (!map.current.getLayer('user-location-accuracy')) {
+          map.current.addLayer({
+            id: 'user-location-accuracy',
+            type: 'fill',
+            source: sourceId,
+            paint: {
+              'fill-color': '#4285f4',
+              'fill-opacity': 0.1,
+            },
+          });
+
+          map.current.addLayer({
+            id: 'user-location-accuracy-stroke',
+            type: 'line',
+            source: sourceId,
+            paint: {
+              'line-color': '#4285f4',
+              'line-width': 1,
+              'line-opacity': 0.3,
+            },
+          });
+        }
+      }
+    }
+
+    return () => {
+      if (userLocationMarker.current) {
+        userLocationMarker.current.remove();
+        userLocationMarker.current = null;
+      }
+      if (userLocationAccuracySource.current && map.current) {
+        const sourceId = userLocationAccuracySource.current;
+        if (map.current.getLayer('user-location-accuracy')) {
+          map.current.removeLayer('user-location-accuracy');
+        }
+        if (map.current.getLayer('user-location-accuracy-stroke')) {
+          map.current.removeLayer('user-location-accuracy-stroke');
+        }
+        if (map.current.getSource(sourceId)) {
+          map.current.removeSource(sourceId);
+        }
+        userLocationAccuracySource.current = null;
+      }
+    };
+  }, [currentLocation, accuracy, isTracking, isLoaded]);
+
+  // Helper function to create a circle polygon
+  const createCircle = (center: [number, number], radiusInDegrees: number, points: number = 64): GeoJSON.Polygon => {
+    const coordinates: [number, number][] = [];
+    for (let i = 0; i < points; i++) {
+      const angle = (i / points) * 2 * Math.PI;
+      const lat = center[1] + radiusInDegrees * Math.cos(angle);
+      const lng = center[0] + (radiusInDegrees * Math.sin(angle)) / Math.cos(center[1] * Math.PI / 180);
+      coordinates.push([lng, lat]);
+    }
+    coordinates.push(coordinates[0]); // Close the polygon
+    return {
+      type: 'Polygon',
+      coordinates: [coordinates],
+    };
+  };
+
   const getMapStyle = (layerType: MapLayer): string => {
     const baseUrl = 'mapbox://styles/mapbox/';
     const styles: Record<MapLayer, string> = {
@@ -568,6 +732,28 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     <div className="relative w-full h-full">
       <div ref={mapContainer} className="w-full h-full" />
       {children}
+      <style>{`
+        @keyframes pulse {
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 0.4;
+          }
+          50% {
+            transform: translate(-50%, -50%) scale(2);
+            opacity: 0.1;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(2.5);
+            opacity: 0;
+          }
+        }
+        .user-location-marker {
+          position: relative;
+        }
+        .user-location-pulse {
+          pointer-events: none;
+        }
+      `}</style>
     </div>
   );
 };
