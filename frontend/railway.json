@@ -1,5 +1,6 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
+  "_updated": "2024-12-19",
   "build": {
     "builder": "NIXPACKS",
     "buildCommand": "cd frontend && npm install && npm run build"
