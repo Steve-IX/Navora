@@ -14,21 +14,24 @@ const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.e
 
 function App() {
   const [isReady, setIsReady] = useState(false);
-  const { addMarker, setCenter } = useMapStore();
+  const { addMarker, setCenter, setZoom } = useMapStore();
+
+  const initializeLocation = async () => {
+    try {
+      const location = await locationService.getCurrentPosition();
+      setCenter(location.coordinates);
+      setZoom(12); // Zoom in when we have a specific location
+    } catch (error) {
+      console.warn('Failed to detect location:', error);
+      // Keep default world center (0, 0) with zoom level 2
+    }
+  };
 
   useEffect(() => {
     // In demo mode, skip authentication
     if (IS_DEMO_MODE) {
       setIsReady(true);
-      // Try to get user location
-      locationService
-        .getCurrentPosition()
-        .then((location) => {
-          setCenter(location.coordinates);
-        })
-        .catch(() => {
-          // If location fails, keep default (San Francisco)
-        });
+      initializeLocation();
       return;
     }
 
@@ -39,43 +42,19 @@ function App() {
         .createGuestToken()
         .then(() => {
           setIsReady(true);
-          // Try to get user location after auth
-          locationService
-            .getCurrentPosition()
-            .then((location) => {
-              setCenter(location.coordinates);
-            })
-            .catch(() => {
-              // If location fails, keep default (San Francisco)
-            });
+          initializeLocation();
         })
         .catch((error) => {
           console.error('Failed to create guest token:', error);
-          // Still allow app to work in demo mode if auth fails
+          // Still allow app to work if auth fails
           setIsReady(true);
-          // Try to get user location even if auth fails
-          locationService
-            .getCurrentPosition()
-            .then((location) => {
-              setCenter(location.coordinates);
-            })
-            .catch(() => {
-              // If location fails, keep default (San Francisco)
-            });
+          initializeLocation();
         });
     } else {
       setIsReady(true);
-      // Try to get user location
-      locationService
-        .getCurrentPosition()
-        .then((location) => {
-          setCenter(location.coordinates);
-        })
-        .catch(() => {
-          // If location fails, keep default (San Francisco)
-        });
+      initializeLocation();
     }
-  }, [setCenter]);
+  }, [setCenter, setZoom]);
 
   const handleMapClick = (coordinates: Coordinates) => {
     // Add a marker when clicking on the map

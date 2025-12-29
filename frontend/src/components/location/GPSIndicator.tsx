@@ -19,34 +19,41 @@ export const GPSIndicator: React.FC = () => {
     setError,
   } = useLocationStore();
 
-  const { setCenter, addMarker, removeMarker } = useMapStore();
+  const { setCenter, setZoom, addMarker, removeMarker } = useMapStore();
   const locationMarkerId = useRef<string | null>(null);
 
   useEffect(() => {
     // Check geolocation permission
-    if ('permissions' in navigator) {
-      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-        setPermissionGranted(result.state === 'granted');
-        result.onchange = () => {
+    if ('permissions' in navigator && 'query' in navigator.permissions) {
+      navigator.permissions
+        .query({ name: 'geolocation' as PermissionName })
+        .then((result) => {
           setPermissionGranted(result.state === 'granted');
-        };
-      });
+          result.onchange = () => {
+            setPermissionGranted(result.state === 'granted');
+          };
+        })
+        .catch(() => {
+          // Permissions API might not be supported or query might fail
+          // This is okay, we'll handle it when user clicks the button
+        });
     }
-  }, []);
+  }, [setPermissionGranted]);
 
   const handleStartTracking = async () => {
     try {
-      // Request current position first
+      setError(null);
+      // Request current position first (will use IP geolocation as fallback)
       const initialLocation = await locationService.getCurrentPosition();
       setCurrentLocation(initialLocation.coordinates);
       if (initialLocation.accuracy) setAccuracy(initialLocation.accuracy);
       if (initialLocation.heading) setHeading(initialLocation.heading);
       if (initialLocation.speed) setSpeed(initialLocation.speed);
       setPermissionGranted(true);
-      setError(null);
 
       // Center map on location
       setCenter(initialLocation.coordinates);
+      setZoom(12); // Zoom in when we have a specific location
 
       // Add/update marker
       if (locationMarkerId.current) {
@@ -60,30 +67,44 @@ export const GPSIndicator: React.FC = () => {
         color: '#ef4444',
       });
 
-      // Start continuous tracking
-      locationService.startTracking((location) => {
-        setCurrentLocation(location.coordinates);
-        setAccuracy(location.accuracy ?? null);
-        setHeading(location.heading ?? null);
-        setSpeed(location.speed ?? null);
+      // Only start continuous tracking if browser geolocation is supported
+      // IP geolocation doesn't support watchPosition
+      if (navigator.geolocation) {
+        try {
+          locationService.startTracking((location) => {
+            setCurrentLocation(location.coordinates);
+            setAccuracy(location.accuracy ?? null);
+            setHeading(location.heading ?? null);
+            setSpeed(location.speed ?? null);
 
-        // Update marker
-        if (locationMarkerId.current) {
-          removeMarker(locationMarkerId.current);
+            // Update marker
+            if (locationMarkerId.current) {
+              removeMarker(locationMarkerId.current);
+            }
+            locationMarkerId.current = 'user-location';
+            addMarker({
+              id: locationMarkerId.current,
+              coordinates: location.coordinates,
+              title: 'Your Location',
+              color: '#ef4444',
+            });
+          });
+          setIsTracking(true);
+        } catch (trackError) {
+          // Tracking failed, but we still have the initial location
+          console.warn('Failed to start continuous tracking:', trackError);
+          setIsTracking(false);
         }
-        locationMarkerId.current = 'user-location';
-        addMarker({
-          id: locationMarkerId.current,
-          coordinates: location.coordinates,
-          title: 'Your Location',
-          color: '#ef4444',
-        });
-      });
-
-      setIsTracking(true);
+      } else {
+        // Browser geolocation not supported, just use the IP-based location
+        setIsTracking(false);
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to get location');
+      const errorMessage = err.message || 'Failed to get location';
+      setError(errorMessage);
       setPermissionGranted(false);
+      setIsTracking(false);
+      console.error('Location error:', err);
     }
   };
 
@@ -99,6 +120,7 @@ export const GPSIndicator: React.FC = () => {
   const handleRecenter = () => {
     if (currentLocation) {
       setCenter(currentLocation);
+      setZoom(12);
     }
   };
 

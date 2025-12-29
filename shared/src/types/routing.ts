@@ -1,6 +1,6 @@
 import { Coordinates } from './geocoding';
 
-export type RoutingProfile = 'driving' | 'walking' | 'cycling' | 'driving-traffic' | 'transit';
+export type RoutingProfile = 'driving' | 'walking' | 'cycling' | 'driving-traffic' | 'transit' | 'flight';
 
 export interface RouteWaypoint {
   coordinates: Coordinates;

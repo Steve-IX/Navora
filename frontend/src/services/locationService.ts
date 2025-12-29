@@ -15,10 +15,19 @@ export interface LocationServiceOptions {
   updateInterval?: number;
 }
 
+interface IPGeolocationResponse {
+  latitude: number;
+  longitude: number;
+  city?: string;
+  region?: string;
+  country?: string;
+}
+
 export class LocationService {
   private watchId: number | null = null;
   private options: LocationServiceOptions;
   private listeners: Set<(location: LocationTracking) => void> = new Set();
+  private cachedIPLocation: Coordinates | null = null;
 
   constructor(options: LocationServiceOptions = {}) {
     this.options = {
@@ -33,7 +42,10 @@ export class LocationService {
   async getCurrentPosition(): Promise<LocationTracking> {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('Geolocation is not supported by this browser'));
+        // Fallback to IP geolocation if browser geolocation is not supported
+        this.getIPGeolocation()
+          .then((location) => resolve(location))
+          .catch(() => reject(new Error('Geolocation is not supported')));
         return;
       }
 
@@ -50,12 +62,76 @@ export class LocationService {
             timestamp: new Date(position.timestamp),
           });
         },
-        (error) => {
-          reject(error);
+        async (error) => {
+          // If browser geolocation fails, try IP-based geolocation as fallback
+          try {
+            const ipLocation = await this.getIPGeolocation();
+            resolve(ipLocation);
+          } catch (ipError) {
+            reject(error);
+          }
         },
         this.options,
       );
     });
+  }
+
+  private async getIPGeolocation(): Promise<LocationTracking> {
+    // Use cached location if available
+    if (this.cachedIPLocation) {
+      return {
+        coordinates: this.cachedIPLocation,
+        timestamp: new Date(),
+      };
+    }
+
+    try {
+      // Try ipapi.co first (more reliable)
+      const response = await fetch('https://ipapi.co/json/');
+      if (!response.ok) {
+        throw new Error('IP geolocation API failed');
+      }
+      const data: IPGeolocationResponse = await response.json();
+      
+      if (data.latitude && data.longitude) {
+        const coordinates: Coordinates = {
+          latitude: data.latitude,
+          longitude: data.longitude,
+        };
+        // Cache the result
+        this.cachedIPLocation = coordinates;
+        return {
+          coordinates,
+          timestamp: new Date(),
+        };
+      }
+      throw new Error('Invalid IP geolocation response');
+    } catch (error) {
+      // Fallback to ip-api.com
+      try {
+        const response = await fetch('http://ip-api.com/json/');
+        if (!response.ok) {
+          throw new Error('IP geolocation API failed');
+        }
+        const data: IPGeolocationResponse = await response.json();
+        
+        if (data.latitude && data.longitude) {
+          const coordinates: Coordinates = {
+            latitude: data.latitude,
+            longitude: data.longitude,
+          };
+          // Cache the result
+          this.cachedIPLocation = coordinates;
+          return {
+            coordinates,
+            timestamp: new Date(),
+          };
+        }
+        throw new Error('Invalid IP geolocation response');
+      } catch (fallbackError) {
+        throw new Error('IP geolocation failed');
+      }
+    }
   }
 
   startTracking(callback: (location: LocationTracking) => void): void {

@@ -10,6 +10,7 @@ const profiles: { value: RoutingProfile; label: string; icon: string }[] = [
   { value: 'walking', label: 'Walking', icon: '🚶' },
   { value: 'cycling', label: 'Cycling', icon: '🚴' },
   { value: 'transit', label: 'Transit', icon: '🚌' },
+  { value: 'flight', label: 'Flight', icon: '✈️' },
 ];
 
 export const RoutePlanner: React.FC = () => {

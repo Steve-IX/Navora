@@ -20,14 +20,16 @@ interface MapStore extends MapState {
   updateMapState: (state: Partial<MapState>) => void;
 }
 
+// Default to world center (0, 0) instead of hardcoded San Francisco
+// Actual location will be detected via geolocation in App.tsx
 const defaultCenter: Coordinates = {
-  longitude: -122.4194,
-  latitude: 37.7749,
+  longitude: 0,
+  latitude: 0,
 };
 
 export const useMapStore = create<MapStore>((set) => ({
   center: defaultCenter,
-  zoom: 12,
+  zoom: 2, // Lower zoom level for world view when using default center
   bearing: 0,
   pitch: 0,
   layer: 'standard',

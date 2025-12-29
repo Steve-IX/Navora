@@ -20,7 +20,7 @@ class RoutingRequestDto implements RoutingRequest {
   @Type(() => RouteWaypointDto)
   waypoints: RouteWaypointDto[];
 
-  @IsEnum(['driving', 'walking', 'cycling', 'driving-traffic', 'transit'])
+  @IsEnum(['driving', 'walking', 'cycling', 'driving-traffic', 'transit', 'flight'])
   profile: RoutingProfile;
 
   @IsOptional()
