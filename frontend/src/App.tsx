@@ -13,7 +13,7 @@ import { useUIStore } from './stores/uiStore';
 import { authService } from './services/api/auth.service';
 import { locationService } from './services/locationService';
 import { shareService } from './services/share.service';
-import { placesService } from './services/api/places.service';
+import { geocodingService } from './services/api/geocoding.service';
 import { useRouteStore } from './stores/routeStore';
 import { Coordinates } from '@shared/types/geocoding';
 import { Place } from '@shared/types/places';
@@ -23,7 +23,7 @@ const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.e
 
 function App() {
   const [isReady, setIsReady] = useState(false);
-  const { addMarker, setCenter, setZoom } = useMapStore();
+  const { setCenter, setZoom } = useMapStore();
   const { selectedPlace, setSelectedPlace } = usePlacesStore();
   const { sidePanelOpen, sidePanelContent, setSidePanelOpen, setSidePanelContent } = useUIStore();
   const { addWaypoint, setProfile } = useRouteStore();
@@ -45,12 +45,17 @@ function App() {
     if (sharedLocation) {
       setCenter(sharedLocation.coordinates);
       setZoom(14);
-      addMarker({
+      // Show place details for shared location
+      const place: Place = {
         id: 'shared-location',
+        name: sharedLocation.name || 'Shared Location',
         coordinates: sharedLocation.coordinates,
-        title: sharedLocation.name || 'Shared Location',
-        color: '#3b82f6',
-      });
+        address: sharedLocation.address || `${sharedLocation.coordinates.latitude.toFixed(6)}, ${sharedLocation.coordinates.longitude.toFixed(6)}`,
+        categoryIcon: '📍',
+      };
+      setSelectedPlace(place);
+      setSidePanelContent('places');
+      setSidePanelOpen(true);
       return;
     }
 
@@ -95,21 +100,70 @@ function App() {
     }
   }, [setCenter, setZoom]);
 
-  const handleMapClick = (coordinates: Coordinates) => {
-    const markerId = `marker-${Date.now()}`;
-    addMarker({
-      id: markerId,
-      coordinates,
-      title: `Marker at ${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`,
-      color: '#3b82f6',
-    });
-  };
+  // Handle regular map clicks - reverse geocode to get place info
+  const handleMapClick = useCallback(async (coordinates: Coordinates) => {
+    setIsLoadingPoi(true);
+    
+    try {
+      // Reverse geocode to get place information
+      const results = await geocodingService.reverseGeocode(coordinates);
+      
+      if (results && results.length > 0) {
+        const result = results[0];
+        const category = result.category || inferCategoryFromContext(result.context);
+        const place: Place = {
+          id: result.id || `location-${Date.now()}`,
+          name: result.placeName.split(',')[0] || 'Selected Location',
+          coordinates: result.coordinates,
+          address: result.placeName,
+          category,
+          categoryIcon: getCategoryIcon(category),
+          ...generatePlaceEnhancements({
+            id: result.id,
+            name: result.placeName.split(',')[0],
+            coordinates: result.coordinates,
+            category,
+          } as Place),
+        };
+        
+        setSelectedPlace(place);
+        setSidePanelContent('places');
+        setSidePanelOpen(true);
+      } else {
+        // Fallback: create a basic place for the coordinates
+        const place: Place = {
+          id: `location-${Date.now()}`,
+          name: 'Selected Location',
+          coordinates,
+          address: `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`,
+          categoryIcon: '📍',
+        };
+        setSelectedPlace(place);
+        setSidePanelContent('places');
+        setSidePanelOpen(true);
+      }
+    } catch (error) {
+      console.error('Failed to reverse geocode:', error);
+      // Fallback
+      const place: Place = {
+        id: `location-${Date.now()}`,
+        name: 'Selected Location',
+        coordinates,
+        address: `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`,
+        categoryIcon: '📍',
+      };
+      setSelectedPlace(place);
+      setSidePanelContent('places');
+      setSidePanelOpen(true);
+    } finally {
+      setIsLoadingPoi(false);
+    }
+  }, [setSelectedPlace, setSidePanelContent, setSidePanelOpen]);
 
-  // Handle POI click on the map
+  // Handle POI click on the map (from labeled features)
   const handlePoiClick = useCallback(async (poi: { name: string; coordinates: Coordinates; category?: string }) => {
     setIsLoadingPoi(true);
     
-    // Create a place object from the POI data
     const place: Place = {
       id: `poi-${Date.now()}`,
       name: poi.name,
@@ -117,49 +171,28 @@ function App() {
       category: poi.category,
       categoryIcon: getCategoryIcon(poi.category),
       address: `${poi.coordinates.latitude.toFixed(6)}, ${poi.coordinates.longitude.toFixed(6)}`,
+      ...generatePlaceEnhancements({
+        id: `poi-${Date.now()}`,
+        name: poi.name,
+        coordinates: poi.coordinates,
+        category: poi.category,
+      } as Place),
     };
 
-    // Set the place and open the side panel
+    // Try to get address via reverse geocoding
+    try {
+      const results = await geocodingService.reverseGeocode(poi.coordinates);
+      if (results && results.length > 0) {
+        place.address = results[0].placeName;
+      }
+    } catch (error) {
+      console.warn('Failed to get address:', error);
+    }
+
     setSelectedPlace(place);
     setSidePanelContent('places');
     setSidePanelOpen(true);
-
-    // Try to get more details about the place
-    try {
-      // Search for the place to get more details
-      const searchResults = await placesService.searchPlaces({
-        query: poi.name,
-        coordinates: poi.coordinates,
-        limit: 1,
-      });
-
-      if (searchResults.length > 0) {
-        const detailedPlace = searchResults[0];
-        // Enhance with generated details
-        const enhancedPlace: Place = {
-          ...detailedPlace,
-          ...generatePlaceEnhancements(detailedPlace),
-        };
-        setSelectedPlace(enhancedPlace);
-      } else {
-        // Generate enhancements for the basic POI
-        const enhancedPlace: Place = {
-          ...place,
-          ...generatePlaceEnhancements(place),
-        };
-        setSelectedPlace(enhancedPlace);
-      }
-    } catch (error) {
-      console.error('Failed to fetch place details:', error);
-      // Keep the basic place info
-      const enhancedPlace: Place = {
-        ...place,
-        ...generatePlaceEnhancements(place),
-      };
-      setSelectedPlace(enhancedPlace);
-    } finally {
-      setIsLoadingPoi(false);
-    }
+    setIsLoadingPoi(false);
   }, [setSelectedPlace, setSidePanelContent, setSidePanelOpen]);
 
   if (!isReady) {
@@ -185,6 +218,7 @@ function App() {
         <div className="absolute bottom-20 left-4 z-20 flex flex-col gap-2">
           <button
             onClick={() => {
+              setSelectedPlace(null);
               setSidePanelContent('places');
               setSidePanelOpen(true);
             }}
@@ -247,6 +281,20 @@ function App() {
       </SidePanel>
     </div>
   );
+}
+
+// Helper function to infer category from Mapbox context
+function inferCategoryFromContext(context?: Array<{ id: string; text: string }>): string | undefined {
+  if (!context || context.length === 0) return 'place';
+  
+  // Check context for place type hints
+  for (const ctx of context) {
+    const id = ctx.id.toLowerCase();
+    if (id.includes('poi')) return 'attraction';
+    if (id.includes('place') || id.includes('locality')) return 'place';
+    if (id.includes('address')) return 'place';
+  }
+  return 'place';
 }
 
 // Helper function to get category icon
