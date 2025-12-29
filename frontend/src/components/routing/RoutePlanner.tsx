@@ -3,6 +3,7 @@ import { useRouteStore } from '@/stores/routeStore';
 import { routingService } from '@/services/api/routing.service';
 import { useMapStore } from '@/stores/mapStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useLocationStore } from '@/stores/locationStore';
 import { RoutingProfile } from '@shared/types/routing';
 import { geocodingService } from '@/services/api/geocoding.service';
 import { DirectionsList } from '../navigation/DirectionsList';
@@ -45,9 +46,41 @@ export const RoutePlanner: React.FC = () => {
 
   const { addRoute, clearRoutes } = useMapStore();
   const { bottomSheetOpen, bottomSheetContent, setBottomSheetOpen, setBottomSheetContent } = useUIStore();
+  const { currentLocation } = useLocationStore();
+
+  // Auto-fill "from" with current location when it becomes available
+  useEffect(() => {
+    if (!currentLocation) return;
+
+    if (waypoints.length === 0) {
+      // Set current location as first waypoint
+      addWaypoint({
+        coordinates: currentLocation,
+        name: 'Current Location',
+      });
+      setFromQuery('Current Location');
+    } else {
+      // Update first waypoint if it's "Current Location" and location changed significantly
+      const firstWaypoint = waypoints[0];
+      if (firstWaypoint && firstWaypoint.name === 'Current Location') {
+        const distance = Math.sqrt(
+          Math.pow(currentLocation.latitude - firstWaypoint.coordinates.latitude, 2) +
+          Math.pow(currentLocation.longitude - firstWaypoint.coordinates.longitude, 2)
+        );
+        // Update if moved more than ~100 meters (roughly 0.001 degrees)
+        if (distance > 0.001) {
+          removeWaypoint(0);
+          addWaypoint({
+            coordinates: currentLocation,
+            name: 'Current Location',
+          });
+        }
+      }
+    }
+  }, [currentLocation?.latitude, currentLocation?.longitude, waypoints.length, addWaypoint, removeWaypoint]);
 
   useEffect(() => {
-    if (fromQuery.length >= 2) {
+    if (fromQuery.length >= 2 && fromQuery !== 'Current Location') {
       geocodingService.autocomplete(fromQuery).then(setFromSuggestions).catch(console.error);
     } else {
       setFromSuggestions([]);
@@ -153,13 +186,38 @@ export const RoutePlanner: React.FC = () => {
 
             <div className="space-y-2">
               <div className="relative">
-                <input
-                  type="text"
-                  value={fromQuery}
-                  onChange={(e) => setFromQuery(e.target.value)}
-                  placeholder="From"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={fromQuery}
+                    onChange={(e) => setFromQuery(e.target.value)}
+                    placeholder="From"
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  {currentLocation && (
+                    <button
+                      onClick={() => {
+                        setFromQuery('Current Location');
+                        if (waypoints.length === 0) {
+                          addWaypoint({
+                            coordinates: currentLocation,
+                            name: 'Current Location',
+                          });
+                        } else {
+                          removeWaypoint(0);
+                          addWaypoint({
+                            coordinates: currentLocation,
+                            name: 'Current Location',
+                          });
+                        }
+                      }}
+                      className="px-3 py-2 bg-primary-100 text-primary-700 rounded-md hover:bg-primary-200 transition-colors text-sm font-medium"
+                      title="Use current location"
+                    >
+                      📍
+                    </button>
+                  )}
+                </div>
                 {fromSuggestions.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-30 max-h-48 overflow-y-auto">
                     {fromSuggestions.map((suggestion) => (

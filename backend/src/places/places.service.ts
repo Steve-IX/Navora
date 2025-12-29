@@ -163,35 +163,157 @@ export class PlacesService {
     limit?: number;
   }) {
     try {
-      // For nearby places, we use a different approach - search for POI near coordinates
-      const query = options?.category || 'poi'; // Point of Interest
-      const radius = options?.radius || 1000; // 1km default
+      // For nearby places, we need to use a different strategy
+      // Mapbox geocoding API works best with actual place names, not category searches
+      // So we'll search for common place names near the coordinates
+      const radius = options?.radius || 2000; // 2km default
       
       // Calculate bounding box from radius
       const bbox = this.calculateBoundingBox(coordinates, radius);
+      
+      // Get category-specific search terms that work with Mapbox
+      const searchTerms = this.getCategorySearchTerms(options?.category);
       
       const proximityParam = `&proximity=${coordinates.longitude},${coordinates.latitude}`;
       const bboxParam = `&bbox=${bbox.join(',')}`;
       const limitParam = options?.limit ? `&limit=${options.limit}` : '&limit=20';
       
       // Mapbox uses types parameter for categories
-      const typesParam = options?.category ? `&types=${this.mapCategoryToMapboxTypes(options.category)}` : '&types=poi';
+      const typesParam = options?.category 
+        ? `&types=${this.mapCategoryToMapboxTypes(options.category)}` 
+        : '&types=poi';
 
-      const url = `${this.mapboxApiUrl}/mapbox.places/${encodeURIComponent(query)}.json?access_token=${this.mapboxAccessToken}${proximityParam}${bboxParam}${limitParam}${typesParam}`;
+      // Try multiple search terms and combine results
+      const allResults: any[] = [];
+      
+      for (const searchTerm of searchTerms) {
+        try {
+          const url = `${this.mapboxApiUrl}/mapbox.places/${encodeURIComponent(searchTerm)}.json?access_token=${this.mapboxAccessToken}${proximityParam}${bboxParam}${limitParam}${typesParam}`;
+          
+          const response = await firstValueFrom(this.httpService.get(url));
 
-      const response = await firstValueFrom(this.httpService.get(url));
-
-      if (!response.data || !response.data.features) {
-        console.error('Invalid Mapbox response:', response.data);
-        return [];
+          if (response.data && response.data.features) {
+            // Filter and add unique results
+            response.data.features.forEach((feature: any) => {
+              const place = this.transformPlace(feature);
+              const distance = this.calculateDistance(
+                coordinates.latitude,
+                coordinates.longitude,
+                place.coordinates.latitude,
+                place.coordinates.longitude
+              );
+              
+              // Only add if within radius and not already in results
+              if (distance <= radius) {
+                const exists = allResults.some(p => p.id === place.id);
+                if (!exists) {
+                  allResults.push(place);
+                }
+              }
+            });
+          }
+        } catch (termError) {
+          // Continue with next search term if one fails
+          console.warn(`Search term "${searchTerm}" failed:`, termError);
+        }
       }
 
-      return response.data.features.map((feature: any) => this.transformPlace(feature));
+      // Sort by distance and limit results
+      const sortedResults = allResults
+        .map(place => ({
+          ...place,
+          distance: this.calculateDistance(
+            coordinates.latitude,
+            coordinates.longitude,
+            place.coordinates.latitude,
+            place.coordinates.longitude
+          )
+        }))
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, options?.limit || 20)
+        .map(({ distance, ...place }) => place); // Remove distance from final result
+
+      return sortedResults;
     } catch (error: any) {
       console.error('Nearby places error:', error.response?.data || error.message);
       // Return empty array instead of throwing to prevent 500 errors
       return [];
     }
+  }
+
+  private getCategorySearchTerms(category?: string): string[] {
+    // Return multiple search terms that work well with Mapbox for each category
+    if (!category) {
+      return ['restaurant', 'cafe', 'bar', 'hotel', 'shop', 'store'];
+    }
+
+    const categoryTerms: Record<string, string[]> = {
+      restaurant: ['restaurant', 'dining', 'food', 'eatery'],
+      cafe: ['cafe', 'coffee', 'coffeeshop', 'café'],
+      bar: ['bar', 'pub', 'tavern', 'lounge'],
+      hotel: ['hotel', 'lodging', 'inn', 'motel'],
+      gas_station: ['gas station', 'fuel', 'petrol', 'gas'],
+      parking: ['parking', 'parking lot', 'garage'],
+      hospital: ['hospital', 'medical center', 'clinic'],
+      pharmacy: ['pharmacy', 'drugstore', 'chemist'],
+      bank: ['bank', 'atm', 'financial'],
+      supermarket: ['supermarket', 'grocery', 'store'],
+      shopping: ['shop', 'store', 'mall', 'retail'],
+      attraction: ['attraction', 'landmark', 'tourist'],
+      museum: ['museum', 'gallery', 'exhibition'],
+      park: ['park', 'garden', 'recreation'],
+      gym: ['gym', 'fitness', 'exercise'],
+      cinema: ['cinema', 'movie', 'theater'],
+      school: ['school', 'university', 'college'],
+      airport: ['airport', 'airfield'],
+      bus_station: ['bus station', 'bus stop', 'terminal'],
+      train_station: ['train station', 'railway', 'metro'],
+    };
+
+    return categoryTerms[category] || ['poi', 'place'];
+  }
+
+  private getCategorySearchQuery(category: string): string {
+    // Return search queries that work well with Mapbox
+    const categoryQueries: Record<string, string> = {
+      restaurant: 'restaurant',
+      cafe: 'cafe',
+      bar: 'bar',
+      hotel: 'hotel',
+      gas_station: 'gas station',
+      parking: 'parking',
+      hospital: 'hospital',
+      pharmacy: 'pharmacy',
+      bank: 'bank',
+      supermarket: 'supermarket',
+      shopping: 'shop',
+      attraction: 'attraction',
+      museum: 'museum',
+      park: 'park',
+      gym: 'gym',
+      cinema: 'cinema',
+      school: 'school',
+      airport: 'airport',
+      bus_station: 'bus station',
+      train_station: 'train station',
+    };
+    
+    return categoryQueries[category] || 'poi';
+  }
+
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
   }
 
   private transformPlace(feature: any, includeDetails = false) {

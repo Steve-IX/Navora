@@ -23,6 +23,11 @@ export const GPSIndicator: React.FC = () => {
   const locationMarkerId = useRef<string | null>(null);
 
   useEffect(() => {
+    // Auto-start tracking on mount (like Google Maps)
+    handleStartTracking();
+  }, []);
+
+  useEffect(() => {
     // Check geolocation permission
     if ('permissions' in navigator && 'query' in navigator.permissions) {
       navigator.permissions
@@ -31,6 +36,10 @@ export const GPSIndicator: React.FC = () => {
           setPermissionGranted(result.state === 'granted');
           result.onchange = () => {
             setPermissionGranted(result.state === 'granted');
+            // If permission is granted and we're not tracking, start tracking
+            if (result.state === 'granted' && !isTracking) {
+              handleStartTracking();
+            }
           };
         })
         .catch(() => {
@@ -38,7 +47,7 @@ export const GPSIndicator: React.FC = () => {
           // This is okay, we'll handle it when user clicks the button
         });
     }
-  }, [setPermissionGranted]);
+  }, [setPermissionGranted, isTracking]);
 
   const handleStartTracking = async () => {
     try {
