@@ -1,6 +1,7 @@
 import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
 import { PlacesService } from './places.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
 import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -69,6 +70,7 @@ export class PlacesController {
   }
 
   @Get('nearby')
+  @Throttle({ default: { limit: 200, ttl: 60000 } }) // 200 requests per minute for nearby places
   async getNearbyPlaces(@Query() dto: NearbyPlacesDto) {
     return this.placesService.getNearbyPlaces(
       { longitude: dto.longitude, latitude: dto.latitude },

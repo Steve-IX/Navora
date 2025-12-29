@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { usePlacesStore } from '@/stores/placesStore';
 import { placesService } from '@/services/api/places.service';
 import { useMapStore } from '@/stores/mapStore';
@@ -6,6 +6,27 @@ import { Place, PLACE_CATEGORIES } from '@shared/types/places';
 
 interface NearbyPlacesProps {
   category?: string;
+}
+
+// Calculate distance between two coordinates in meters
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
 }
 
 export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
@@ -22,11 +43,48 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
   } = usePlacesStore();
 
   const { setCenter: setMapCenter, addMarker, removeMarker } = useMapStore();
+  
+  // Track last fetched location and debounce timer
+  const lastFetchedLocation = useRef<{ lat: number; lng: number } | null>(null);
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const MIN_DISTANCE_THRESHOLD = 100; // Only refetch if moved at least 100 meters
 
   useEffect(() => {
-    if (center.latitude !== 0 && center.longitude !== 0) {
-      loadNearbyPlaces();
+    if (center.latitude === 0 && center.longitude === 0) {
+      return;
     }
+
+    // Check if we need to refetch based on distance moved
+    const shouldRefetch = !lastFetchedLocation.current ||
+      calculateDistance(
+        lastFetchedLocation.current.lat,
+        lastFetchedLocation.current.lng,
+        center.latitude,
+        center.longitude
+      ) > MIN_DISTANCE_THRESHOLD;
+
+    if (shouldRefetch) {
+      // Clear existing debounce timer
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+
+      // Debounce the API call by 500ms
+      debounceTimer.current = setTimeout(() => {
+        loadNearbyPlaces();
+        lastFetchedLocation.current = {
+          lat: center.latitude,
+          lng: center.longitude,
+        };
+      }, 500);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
   }, [center, selectedCategory]);
 
   const loadNearbyPlaces = async () => {
@@ -66,6 +124,8 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
 
   const handleCategoryChange = (categoryId: string | null) => {
     setSelectedCategory(categoryId);
+    // Reset last fetched location when category changes to force immediate refetch
+    lastFetchedLocation.current = null;
   };
 
   return (
