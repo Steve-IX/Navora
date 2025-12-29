@@ -6,7 +6,8 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class PlacesService {
   private readonly mapboxAccessToken: string;
-  private readonly mapboxApiUrl = 'https://api.mapbox.com/geocoding/v5';
+  private readonly searchApiUrl = 'https://api.mapbox.com/search/searchbox/v1';
+  private readonly geocodingApiUrl = 'https://api.mapbox.com/geocoding/v5';
 
   constructor(
     private httpService: HttpService,
@@ -25,58 +26,72 @@ export class PlacesService {
     limit?: number;
   }) {
     try {
-      const proximityParam = options?.coordinates
-        ? `&proximity=${options.coordinates.longitude},${options.coordinates.latitude}`
-        : '';
-      const bboxParam = options?.bbox ? `&bbox=${options.bbox.join(',')}` : '';
-      const limitParam = options?.limit ? `&limit=${options.limit}` : '&limit=20';
-      
-      // Mapbox uses types parameter for categories
-      const typesParam = options?.category ? `&types=${this.mapCategoryToMapboxTypes(options.category)}` : '';
+      // Use Mapbox Search API for forward search
+      const params = new URLSearchParams({
+        q: query,
+        access_token: this.mapboxAccessToken,
+        limit: (options?.limit || 10).toString(),
+        language: 'en',
+      });
 
-      const url = `${this.mapboxApiUrl}/mapbox.places/${encodeURIComponent(query)}.json?access_token=${this.mapboxAccessToken}${proximityParam}${bboxParam}${limitParam}${typesParam}`;
+      if (options?.coordinates) {
+        params.append('proximity', `${options.coordinates.longitude},${options.coordinates.latitude}`);
+      }
 
+      if (options?.category) {
+        // Add POI category filter
+        const mapboxCategory = this.mapCategoryToSearchCategory(options.category);
+        if (mapboxCategory) {
+          params.append('types', 'poi');
+          params.append('poi_category', mapboxCategory);
+        }
+      }
+
+      const url = `${this.searchApiUrl}/forward?${params.toString()}`;
       const response = await firstValueFrom(this.httpService.get(url));
 
       if (!response.data || !response.data.features) {
-        console.error('Invalid Mapbox response:', response.data);
+        console.error('Invalid Mapbox Search response:', response.data);
         return [];
       }
 
-      return response.data.features.map((feature: any) => this.transformPlace(feature));
+      return response.data.features.map((feature: any) => this.transformSearchResult(feature, options?.category));
     } catch (error: any) {
       console.error('Places search error:', error.response?.data || error.message);
-      // Return empty array instead of throwing to prevent 500 errors
-      // The frontend can handle empty results gracefully
       return [];
     }
   }
 
   async getPlaceDetails(placeId: string) {
     try {
-      // Mapbox doesn't have a separate details endpoint, so we use the place ID directly
-      const url = `${this.mapboxApiUrl}/mapbox.places/${placeId}.json?access_token=${this.mapboxAccessToken}`;
+      // Use retrieve endpoint for detailed place info
+      const url = `${this.searchApiUrl}/retrieve/${placeId}?access_token=${this.mapboxAccessToken}`;
       
-      const response = await firstValueFrom(this.httpService.get(url));
+      let response;
+      try {
+        response = await firstValueFrom(this.httpService.get(url));
+      } catch (retrieveError) {
+        // Fallback to geocoding API if retrieve fails
+        const geocodeUrl = `${this.geocodingApiUrl}/mapbox.places/${placeId}.json?access_token=${this.mapboxAccessToken}`;
+        response = await firstValueFrom(this.httpService.get(geocodeUrl));
+      }
       
       if (!response.data.features || response.data.features.length === 0) {
         throw new HttpException('Place not found', HttpStatus.NOT_FOUND);
       }
 
       const feature = response.data.features[0];
-      const place = this.transformPlace(feature, true);
-      const category = place.category;
-      const placeName = place.name;
+      const place = this.transformSearchResult(feature, null, true);
 
       // Enhance with additional details
       return {
         ...place,
-        rating: this.generateRating(placeName, category),
-        reviewCount: this.generateReviewCount(placeName, category),
-        photos: this.generatePlacePhotos(placeName, category),
-        description: this.generatePlaceDescription(placeName, category, place.address),
-        priceLevel: this.generatePriceLevel(category),
-        openingHours: this.generateOpeningHours(category),
+        rating: this.generateRating(place.name, place.category),
+        reviewCount: this.generateReviewCount(place.name, place.category),
+        photos: this.generatePlacePhotos(place.name, place.category),
+        description: this.generatePlaceDescription(place.name, place.category, place.address),
+        priceLevel: this.generatePriceLevel(place.category),
+        openingHours: this.generateOpeningHours(place.category),
       };
     } catch (error: any) {
       if (error instanceof HttpException) {
@@ -90,352 +105,292 @@ export class PlacesService {
     }
   }
 
-  private generateRating(placeName: string, category?: string): number {
-    // Generate a realistic rating between 3.5 and 5.0
-    // In a real app, this would come from a reviews API
-    const baseRating = 4.0;
-    const variation = Math.random() * 1.5; // 0 to 1.5
-    return Math.round((baseRating + variation) * 10) / 10; // Round to 1 decimal
-  }
-
-  private generateReviewCount(placeName: string, category?: string): number {
-    // Generate a realistic review count
-    const baseCount = category === 'restaurant' || category === 'cafe' ? 150 : 50;
-    const variation = Math.floor(Math.random() * 200);
-    return baseCount + variation;
-  }
-
-  private generatePriceLevel(category?: string): number {
-    // Generate price level (1-4, where 1 is cheapest, 4 is most expensive)
-    if (category === 'gas_station' || category === 'parking') return 1;
-    if (category === 'restaurant' || category === 'hotel') {
-      return Math.floor(Math.random() * 2) + 2; // 2-3
-    }
-    return Math.floor(Math.random() * 2) + 1; // 1-2
-  }
-
-  private generateOpeningHours(category?: string): any {
-    // Generate basic opening hours
-    const isOpen = Math.random() > 0.3; // 70% chance of being open
-    
-    const hours = {
-      openNow: isOpen,
-      weekdayText: [
-        'Monday: 9:00 AM – 6:00 PM',
-        'Tuesday: 9:00 AM – 6:00 PM',
-        'Wednesday: 9:00 AM – 6:00 PM',
-        'Thursday: 9:00 AM – 6:00 PM',
-        'Friday: 9:00 AM – 6:00 PM',
-        'Saturday: 10:00 AM – 4:00 PM',
-        'Sunday: Closed',
-      ],
-    };
-
-    // Adjust hours based on category
-    if (category === 'restaurant' || category === 'bar') {
-      hours.weekdayText = [
-        'Monday: 11:00 AM – 11:00 PM',
-        'Tuesday: 11:00 AM – 11:00 PM',
-        'Wednesday: 11:00 AM – 11:00 PM',
-        'Thursday: 11:00 AM – 11:00 PM',
-        'Friday: 11:00 AM – 12:00 AM',
-        'Saturday: 11:00 AM – 12:00 AM',
-        'Sunday: 12:00 PM – 10:00 PM',
-      ];
-    } else if (category === 'cafe') {
-      hours.weekdayText = [
-        'Monday: 7:00 AM – 7:00 PM',
-        'Tuesday: 7:00 AM – 7:00 PM',
-        'Wednesday: 7:00 AM – 7:00 PM',
-        'Thursday: 7:00 AM – 7:00 PM',
-        'Friday: 7:00 AM – 8:00 PM',
-        'Saturday: 8:00 AM – 8:00 PM',
-        'Sunday: 8:00 AM – 6:00 PM',
-      ];
-    }
-
-    return hours;
-  }
-
   async getNearbyPlaces(coordinates: { longitude: number; latitude: number }, options?: {
     category?: string;
-    radius?: number; // in meters
+    radius?: number;
     limit?: number;
   }) {
     try {
-      // For nearby places, we need to use a different strategy
-      // Mapbox geocoding API works best with actual place names, not category searches
-      // So we'll search for common place names near the coordinates
-      const radius = options?.radius || 2000; // 2km default
+      const limit = options?.limit || 20;
       
-      // Calculate bounding box from radius
-      const bbox = this.calculateBoundingBox(coordinates, radius);
-      
-      // Get category-specific search terms that work with Mapbox
-      const searchTerms = this.getCategorySearchTerms(options?.category);
-      
-      const proximityParam = `&proximity=${coordinates.longitude},${coordinates.latitude}`;
-      const bboxParam = `&bbox=${bbox.join(',')}`;
-      const limitParam = options?.limit ? `&limit=${options.limit}` : '&limit=20';
-      
-      // Mapbox uses types parameter for categories
-      const typesParam = options?.category 
-        ? `&types=${this.mapCategoryToMapboxTypes(options.category)}` 
-        : '&types=poi';
+      // Use Mapbox Search API category endpoint for nearby POI searches
+      if (options?.category) {
+        const mapboxCategory = this.mapCategoryToSearchCategory(options.category);
+        if (mapboxCategory) {
+          const params = new URLSearchParams({
+            access_token: this.mapboxAccessToken,
+            proximity: `${coordinates.longitude},${coordinates.latitude}`,
+            limit: limit.toString(),
+            language: 'en',
+          });
 
-      // Try multiple search terms and combine results
-      const allResults: any[] = [];
-      
-      for (const searchTerm of searchTerms) {
-        try {
-          const url = `${this.mapboxApiUrl}/mapbox.places/${encodeURIComponent(searchTerm)}.json?access_token=${this.mapboxAccessToken}${proximityParam}${bboxParam}${limitParam}${typesParam}`;
+          const url = `${this.searchApiUrl}/category/${mapboxCategory}?${params.toString()}`;
           
-          const response = await firstValueFrom(this.httpService.get(url));
+          try {
+            const response = await firstValueFrom(this.httpService.get(url));
 
-          if (response.data && response.data.features) {
-            // Filter and add unique results
-            response.data.features.forEach((feature: any) => {
-              const place = this.transformPlace(feature);
-              const distance = this.calculateDistance(
-                coordinates.latitude,
-                coordinates.longitude,
-                place.coordinates.latitude,
-                place.coordinates.longitude
+            if (response.data && response.data.features) {
+              return response.data.features.map((feature: any) => 
+                this.transformSearchResult(feature, options.category)
               );
-              
-              // Only add if within radius and not already in results
-              if (distance <= radius) {
-                const exists = allResults.some(p => p.id === place.id);
-                if (!exists) {
-                  allResults.push(place);
-                }
-              }
-            });
+            }
+          } catch (categoryError) {
+            console.warn('Category search failed, falling back to text search:', categoryError);
           }
-        } catch (termError) {
-          // Continue with next search term if one fails
-          console.warn(`Search term "${searchTerm}" failed:`, termError);
         }
       }
 
-      // Sort by distance and limit results
-      const sortedResults = allResults
-        .map(place => ({
-          ...place,
-          distance: this.calculateDistance(
-            coordinates.latitude,
-            coordinates.longitude,
-            place.coordinates.latitude,
-            place.coordinates.longitude
-          )
-        }))
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, options?.limit || 20)
-        .map(({ distance, ...place }) => place); // Remove distance from final result
+      // Fallback: use forward search with category-related queries
+      const searchTerms = this.getCategorySearchTerms(options?.category);
+      const allResults: any[] = [];
+      const seenIds = new Set<string>();
 
-      return sortedResults;
+      for (const term of searchTerms.slice(0, 3)) { // Limit to 3 terms for performance
+        try {
+          const params = new URLSearchParams({
+            q: term,
+            access_token: this.mapboxAccessToken,
+            proximity: `${coordinates.longitude},${coordinates.latitude}`,
+            limit: '10',
+            types: 'poi',
+            language: 'en',
+          });
+
+          const url = `${this.searchApiUrl}/forward?${params.toString()}`;
+          const response = await firstValueFrom(this.httpService.get(url));
+
+          if (response.data && response.data.features) {
+            for (const feature of response.data.features) {
+              const id = feature.properties?.mapbox_id || feature.id;
+              if (!seenIds.has(id)) {
+                seenIds.add(id);
+                const place = this.transformSearchResult(feature, options?.category);
+                
+                // Filter by radius if specified
+                if (options?.radius) {
+                  const distance = this.calculateDistance(
+                    coordinates.latitude,
+                    coordinates.longitude,
+                    place.coordinates.latitude,
+                    place.coordinates.longitude
+                  );
+                  if (distance <= options.radius) {
+                    allResults.push({ ...place, distance });
+                  }
+                } else {
+                  allResults.push(place);
+                }
+              }
+            }
+          }
+        } catch (termError) {
+          console.warn(`Search term "${term}" failed:`, termError);
+        }
+      }
+
+      // Sort by distance and limit
+      return allResults
+        .sort((a, b) => (a.distance || 0) - (b.distance || 0))
+        .slice(0, limit)
+        .map(({ distance, ...place }) => place);
     } catch (error: any) {
       console.error('Nearby places error:', error.response?.data || error.message);
-      // Return empty array instead of throwing to prevent 500 errors
       return [];
     }
   }
 
-  private getCategorySearchTerms(category?: string): string[] {
-    // Return multiple search terms that work well with Mapbox for each category
-    if (!category) {
-      return ['restaurant', 'cafe', 'bar', 'hotel', 'shop', 'store'];
+  private transformSearchResult(feature: any, categoryHint?: string | null, includeDetails = false): any {
+    const properties = feature.properties || {};
+    const geometry = feature.geometry || {};
+    const context = properties.context || {};
+    
+    // Get coordinates
+    let coords = { longitude: 0, latitude: 0 };
+    if (geometry.coordinates) {
+      coords = {
+        longitude: geometry.coordinates[0],
+        latitude: geometry.coordinates[1],
+      };
+    } else if (feature.center) {
+      coords = {
+        longitude: feature.center[0],
+        latitude: feature.center[1],
+      };
     }
 
-    const categoryTerms: Record<string, string[]> = {
-      restaurant: ['restaurant', 'dining', 'food', 'eatery'],
-      cafe: ['cafe', 'coffee', 'coffeeshop', 'café'],
-      bar: ['bar', 'pub', 'tavern', 'lounge'],
-      hotel: ['hotel', 'lodging', 'inn', 'motel'],
-      gas_station: ['gas station', 'fuel', 'petrol', 'gas'],
-      parking: ['parking', 'parking lot', 'garage'],
-      hospital: ['hospital', 'medical center', 'clinic'],
-      pharmacy: ['pharmacy', 'drugstore', 'chemist'],
-      bank: ['bank', 'atm', 'financial'],
-      supermarket: ['supermarket', 'grocery', 'store'],
-      shopping: ['shop', 'store', 'mall', 'retail'],
-      attraction: ['attraction', 'landmark', 'tourist'],
-      museum: ['museum', 'gallery', 'exhibition'],
-      park: ['park', 'garden', 'recreation'],
-      gym: ['gym', 'fitness', 'exercise'],
-      cinema: ['cinema', 'movie', 'theater'],
-      school: ['school', 'university', 'college'],
-      airport: ['airport', 'airfield'],
-      bus_station: ['bus station', 'bus stop', 'terminal'],
-      train_station: ['train station', 'railway', 'metro'],
+    // Determine category
+    let category = categoryHint;
+    if (!category && properties.poi_category) {
+      category = this.mapSearchCategoryToOurs(properties.poi_category);
+    }
+    if (!category && properties.maki) {
+      category = this.mapMakiToCategory(properties.maki);
+    }
+    if (!category && feature.place_type) {
+      category = this.inferCategory(feature.place_type);
+    }
+
+    const placeName = properties.name || properties.text || feature.text || 
+                      properties.place_name || feature.place_name || 'Unknown Place';
+    
+    // Build address
+    let address = properties.full_address || properties.place_formatted || 
+                  properties.address || feature.place_name || '';
+    
+    if (context.place?.name) {
+      address = address || context.place.name;
+    }
+
+    const result: any = {
+      id: properties.mapbox_id || feature.id || `place-${Date.now()}`,
+      name: placeName,
+      coordinates: coords,
+      category,
+      categoryIcon: this.getCategoryIcon(category),
+      address,
+      bbox: feature.bbox,
     };
 
-    return categoryTerms[category] || ['poi', 'place'];
+    if (includeDetails) {
+      result.phone = properties.phone || properties.tel;
+      result.website = properties.website;
+      result.photos = this.generatePlacePhotos(placeName, category);
+      result.description = this.generatePlaceDescription(placeName, category, address);
+    }
+
+    return result;
   }
 
-  private getCategorySearchQuery(category: string): string {
-    // Return search queries that work well with Mapbox
-    const categoryQueries: Record<string, string> = {
+  private mapCategoryToSearchCategory(category: string): string | null {
+    // Map our categories to Mapbox Search API category IDs
+    const categoryMap: Record<string, string> = {
+      restaurant: 'restaurant',
+      cafe: 'coffee',
+      bar: 'bar',
+      hotel: 'hotel',
+      gas_station: 'gas_station',
+      parking: 'parking',
+      hospital: 'hospital',
+      pharmacy: 'pharmacy',
+      bank: 'bank',
+      supermarket: 'grocery',
+      shopping: 'shopping',
+      attraction: 'tourist_attraction',
+      museum: 'museum',
+      park: 'park',
+      gym: 'gym',
+      cinema: 'cinema',
+      school: 'school',
+      airport: 'airport',
+      bus_station: 'bus_station',
+      train_station: 'train_station',
+    };
+    return categoryMap[category] || null;
+  }
+
+  private mapSearchCategoryToOurs(searchCategory: string): string | undefined {
+    const reverseMap: Record<string, string> = {
+      restaurant: 'restaurant',
+      food: 'restaurant',
+      coffee: 'cafe',
+      cafe: 'cafe',
+      bar: 'bar',
+      pub: 'bar',
+      hotel: 'hotel',
+      lodging: 'hotel',
+      gas_station: 'gas_station',
+      fuel: 'gas_station',
+      parking: 'parking',
+      hospital: 'hospital',
+      pharmacy: 'pharmacy',
+      bank: 'bank',
+      grocery: 'supermarket',
+      supermarket: 'supermarket',
+      shopping: 'shopping',
+      store: 'shopping',
+      tourist_attraction: 'attraction',
+      museum: 'museum',
+      park: 'park',
+      gym: 'gym',
+      fitness: 'gym',
+      cinema: 'cinema',
+      movie_theater: 'cinema',
+      school: 'school',
+      education: 'school',
+      airport: 'airport',
+      bus_station: 'bus_station',
+      train_station: 'train_station',
+    };
+    
+    // Handle comma-separated categories
+    const categories = searchCategory.split(',').map(c => c.trim().toLowerCase());
+    for (const cat of categories) {
+      if (reverseMap[cat]) return reverseMap[cat];
+    }
+    return undefined;
+  }
+
+  private mapMakiToCategory(maki: string): string | undefined {
+    const makiMap: Record<string, string> = {
       restaurant: 'restaurant',
       cafe: 'cafe',
       bar: 'bar',
-      hotel: 'hotel',
-      gas_station: 'gas station',
+      beer: 'bar',
+      lodging: 'hotel',
+      fuel: 'gas_station',
       parking: 'parking',
       hospital: 'hospital',
       pharmacy: 'pharmacy',
       bank: 'bank',
-      supermarket: 'supermarket',
-      shopping: 'shop',
+      grocery: 'supermarket',
+      shop: 'shopping',
       attraction: 'attraction',
       museum: 'museum',
       park: 'park',
-      gym: 'gym',
+      fitness: 'gym',
       cinema: 'cinema',
       school: 'school',
       airport: 'airport',
-      bus_station: 'bus station',
-      train_station: 'train station',
+      bus: 'bus_station',
+      rail: 'train_station',
     };
-    
-    return categoryQueries[category] || 'poi';
+    return makiMap[maki];
   }
 
-  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  private getCategorySearchTerms(category?: string): string[] {
+    if (!category) {
+      return ['restaurant', 'cafe', 'bar', 'shop', 'hotel'];
+    }
 
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  }
-
-  private transformPlace(feature: any, includeDetails = false) {
-    const properties = feature.properties || {};
-    const context = feature.context || [];
-    
-    // Extract address components from context
-    const addressParts = context
-      .filter((ctx: any) => ctx.id.startsWith('address') || ctx.id.startsWith('place') || ctx.id.startsWith('locality') || ctx.id.startsWith('region'))
-      .map((ctx: any) => ctx.text);
-    
-    const category = properties.category || this.inferCategory(feature.place_type);
-    const placeName = feature.text || feature.place_name;
-    
-    return {
-      id: feature.id,
-      name: placeName,
-      coordinates: {
-        longitude: feature.center[0],
-        latitude: feature.center[1],
-      },
-      category,
-      categoryIcon: this.getCategoryIcon(category),
-      address: feature.place_name,
-      bbox: feature.bbox,
-      // Mapbox doesn't provide all these details, but we structure it for future enhancement
-      ...(includeDetails && {
-        phone: properties.phone,
-        website: properties.website,
-        rating: properties.rating ? parseFloat(properties.rating) : undefined,
-        reviewCount: properties.review_count ? parseInt(properties.review_count) : undefined,
-        photos: this.generatePlacePhotos(placeName, category),
-        description: this.generatePlaceDescription(placeName, category, feature.place_name),
-      }),
-    };
-  }
-
-  private generatePlacePhotos(placeName: string, category?: string): any[] {
-    // Generate placeholder image URLs using Unsplash or similar service
-    // For now, we'll use a placeholder service that generates images based on category
-    const searchQuery = category ? `${category} ${placeName}` : placeName;
-    const encodedQuery = encodeURIComponent(searchQuery);
-    
-    // Using Unsplash Source API (no key required for basic usage)
-    return [
-      {
-        id: 'main',
-        url: `https://source.unsplash.com/800x600/?${encodedQuery}`,
-        width: 800,
-        height: 600,
-        attribution: 'Unsplash',
-      },
-      {
-        id: 'thumbnail',
-        url: `https://source.unsplash.com/400x300/?${encodedQuery}`,
-        width: 400,
-        height: 300,
-        attribution: 'Unsplash',
-      },
-    ];
-  }
-
-  private generatePlaceDescription(name: string, category?: string, address?: string): string {
-    const categoryDescriptions: Record<string, string> = {
-      restaurant: 'A popular dining destination offering a variety of culinary experiences.',
-      cafe: 'A cozy café serving quality coffee and light meals in a welcoming atmosphere.',
-      bar: 'A vibrant bar offering drinks and entertainment for a great night out.',
-      hotel: 'A comfortable accommodation option with modern amenities and excellent service.',
-      gas_station: 'A convenient fuel station with additional services for travelers.',
-      parking: 'A parking facility providing safe and convenient vehicle storage.',
-      hospital: 'A medical facility providing healthcare services and emergency care.',
-      pharmacy: 'A pharmacy offering prescription medications and health products.',
-      bank: 'A financial institution providing banking services and ATM access.',
-      supermarket: 'A grocery store offering a wide selection of food and household items.',
-      shopping: 'A shopping destination with various retail stores and services.',
-      attraction: 'A popular tourist attraction and point of interest.',
-      museum: 'A cultural institution showcasing art, history, and exhibitions.',
-      park: 'A public park offering green space and recreational activities.',
-      gym: 'A fitness center with modern equipment and training facilities.',
-      cinema: 'A movie theater showing the latest films and entertainment.',
-      school: 'An educational institution providing learning opportunities.',
-      airport: 'An airport facility serving air travel and transportation.',
-      bus_station: 'A bus terminal providing public transportation services.',
-      train_station: 'A railway station connecting various destinations.',
+    const categoryTerms: Record<string, string[]> = {
+      restaurant: ['restaurant', 'dining', 'food'],
+      cafe: ['coffee shop', 'cafe', 'coffee'],
+      bar: ['bar', 'pub', 'lounge'],
+      hotel: ['hotel', 'inn', 'lodging'],
+      gas_station: ['gas station', 'fuel', 'petrol'],
+      parking: ['parking', 'car park'],
+      hospital: ['hospital', 'medical center'],
+      pharmacy: ['pharmacy', 'drugstore'],
+      bank: ['bank', 'atm'],
+      supermarket: ['supermarket', 'grocery'],
+      shopping: ['shop', 'store', 'mall'],
+      attraction: ['attraction', 'landmark'],
+      museum: ['museum', 'gallery'],
+      park: ['park', 'garden'],
+      gym: ['gym', 'fitness'],
+      cinema: ['cinema', 'movie theater'],
+      school: ['school', 'university'],
+      airport: ['airport'],
+      bus_station: ['bus station', 'bus stop'],
+      train_station: ['train station', 'railway'],
     };
 
-    const baseDescription = categoryDescriptions[category || 'attraction'] || 'A notable location worth visiting.';
-    return `${name}${address ? ` located in ${address}` : ''}. ${baseDescription}`;
-  }
-
-  private mapCategoryToMapboxTypes(category: string): string {
-    // Map our category IDs to Mapbox types
-    const categoryMap: Record<string, string> = {
-      restaurant: 'restaurant',
-      cafe: 'cafe,coffee',
-      bar: 'bar,pub',
-      hotel: 'hotel',
-      gas_station: 'gas',
-      parking: 'parking',
-      hospital: 'hospital',
-      pharmacy: 'pharmacy',
-      bank: 'bank',
-      supermarket: 'market,store',
-      shopping: 'shop,store',
-      attraction: 'poi',
-      museum: 'museum',
-      park: 'park',
-      gym: 'gym',
-      cinema: 'cinema',
-      school: 'school',
-      airport: 'airport',
-      bus_station: 'bus',
-      train_station: 'railway',
-    };
-    
-    return categoryMap[category] || 'poi';
+    return categoryTerms[category] || ['point of interest'];
   }
 
   private inferCategory(placeTypes: string[]): string | undefined {
     if (!placeTypes || placeTypes.length === 0) return undefined;
     
-    // Map Mapbox types to our categories
     const typeMap: Record<string, string> = {
       restaurant: 'restaurant',
       cafe: 'cafe',
@@ -462,11 +417,8 @@ export class PlacesService {
     };
 
     for (const type of placeTypes) {
-      if (typeMap[type]) {
-        return typeMap[type];
-      }
+      if (typeMap[type]) return typeMap[type];
     }
-    
     return undefined;
   }
 
@@ -499,21 +451,131 @@ export class PlacesService {
     return iconMap[category] || '📍';
   }
 
-  private calculateBoundingBox(
-    center: { longitude: number; latitude: number },
-    radiusMeters: number,
-  ): [number, number, number, number] {
-    // Approximate conversion: 1 degree latitude ≈ 111km
-    const latDelta = radiusMeters / 111000;
-    // Longitude delta depends on latitude
-    const lngDelta = radiusMeters / (111000 * Math.cos((center.latitude * Math.PI) / 180));
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  }
+
+  private generateRating(placeName: string, category?: string): number {
+    const hash = placeName.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
+    const normalized = Math.abs(hash % 100) / 100;
+    return Math.round((3.5 + normalized * 1.5) * 10) / 10;
+  }
+
+  private generateReviewCount(placeName: string, category?: string): number {
+    const hash = placeName.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
+    const base = category === 'restaurant' || category === 'cafe' ? 100 : 30;
+    return base + Math.abs(hash % 300);
+  }
+
+  private generatePriceLevel(category?: string): number {
+    if (category === 'gas_station' || category === 'parking') return 1;
+    if (category === 'restaurant' || category === 'hotel') return 2 + Math.floor(Math.random() * 2);
+    return 1 + Math.floor(Math.random() * 2);
+  }
+
+  private generateOpeningHours(category?: string): any {
+    const hours = {
+      openNow: Math.random() > 0.3,
+      weekdayText: [
+        'Monday: 9:00 AM – 6:00 PM',
+        'Tuesday: 9:00 AM – 6:00 PM',
+        'Wednesday: 9:00 AM – 6:00 PM',
+        'Thursday: 9:00 AM – 6:00 PM',
+        'Friday: 9:00 AM – 6:00 PM',
+        'Saturday: 10:00 AM – 4:00 PM',
+        'Sunday: Closed',
+      ],
+    };
+
+    if (category === 'restaurant' || category === 'bar') {
+      hours.weekdayText = [
+        'Monday: 11:00 AM – 11:00 PM',
+        'Tuesday: 11:00 AM – 11:00 PM',
+        'Wednesday: 11:00 AM – 11:00 PM',
+        'Thursday: 11:00 AM – 11:00 PM',
+        'Friday: 11:00 AM – 12:00 AM',
+        'Saturday: 11:00 AM – 12:00 AM',
+        'Sunday: 12:00 PM – 10:00 PM',
+      ];
+    } else if (category === 'cafe') {
+      hours.weekdayText = [
+        'Monday: 7:00 AM – 7:00 PM',
+        'Tuesday: 7:00 AM – 7:00 PM',
+        'Wednesday: 7:00 AM – 7:00 PM',
+        'Thursday: 7:00 AM – 7:00 PM',
+        'Friday: 7:00 AM – 8:00 PM',
+        'Saturday: 8:00 AM – 8:00 PM',
+        'Sunday: 8:00 AM – 6:00 PM',
+      ];
+    }
+
+    return hours;
+  }
+
+  private generatePlacePhotos(placeName: string, category?: string): any[] {
+    const query = category ? `${category}` : 'place';
+    const encodedQuery = encodeURIComponent(query);
     
     return [
-      center.longitude - lngDelta, // west
-      center.latitude - latDelta, // south
-      center.longitude + lngDelta, // east
-      center.latitude + latDelta, // north
+      {
+        id: 'main',
+        url: `https://source.unsplash.com/800x600/?${encodedQuery}`,
+        width: 800,
+        height: 600,
+        attribution: 'Unsplash',
+      },
+      {
+        id: 'thumb1',
+        url: `https://source.unsplash.com/400x300/?${encodedQuery},interior`,
+        width: 400,
+        height: 300,
+        attribution: 'Unsplash',
+      },
+      {
+        id: 'thumb2',
+        url: `https://source.unsplash.com/400x300/?${encodedQuery},exterior`,
+        width: 400,
+        height: 300,
+        attribution: 'Unsplash',
+      },
     ];
   }
-}
 
+  private generatePlaceDescription(name: string, category?: string, address?: string): string {
+    const descriptions: Record<string, string> = {
+      restaurant: 'A popular dining destination offering quality cuisine and great service.',
+      cafe: 'A cozy café serving excellent coffee and light meals.',
+      bar: 'A vibrant spot for drinks and entertainment.',
+      hotel: 'Comfortable accommodation with modern amenities.',
+      gas_station: 'Convenient fuel station for travelers.',
+      parking: 'Safe and convenient parking facility.',
+      hospital: 'Healthcare facility providing medical services.',
+      pharmacy: 'Pharmacy offering medications and health products.',
+      bank: 'Financial services and ATM access.',
+      supermarket: 'Wide selection of groceries and household items.',
+      shopping: 'Various retail stores and services.',
+      attraction: 'Popular point of interest worth visiting.',
+      museum: 'Cultural institution with exhibitions.',
+      park: 'Green space for recreation and relaxation.',
+      gym: 'Fitness center with modern equipment.',
+      cinema: 'Movie theater showing the latest films.',
+      school: 'Educational institution.',
+      airport: 'Airport serving air travel.',
+      bus_station: 'Public bus transportation hub.',
+      train_station: 'Railway station connecting destinations.',
+    };
+
+    const desc = descriptions[category || 'attraction'] || 'A notable location.';
+    return `${name}. ${desc}`;
+  }
+}

@@ -5,62 +5,198 @@ import { Place, NearbyPlacesRequest, PlaceSearchRequest, PLACE_CATEGORIES } from
 const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.env.VITE_API_URL;
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+const SEARCH_API_URL = 'https://api.mapbox.com/search/searchbox/v1';
 
-function transformMapboxFeature(feature: any): Place {
-  // Infer category from Mapbox types
-  const placeTypes = feature.place_type || [];
-  let category: string | undefined;
-  for (const type of placeTypes) {
-    const found = PLACE_CATEGORIES.find(cat => 
-      cat.keywords?.some(kw => type.toLowerCase().includes(kw.toLowerCase()))
-    );
-    if (found) {
-      category = found.id;
-      break;
-    }
-  }
+// Map our categories to Mapbox Search API categories
+const categoryToSearchCategory: Record<string, string> = {
+  restaurant: 'restaurant',
+  cafe: 'coffee',
+  bar: 'bar',
+  hotel: 'hotel',
+  gas_station: 'gas_station',
+  parking: 'parking',
+  hospital: 'hospital',
+  pharmacy: 'pharmacy',
+  bank: 'bank',
+  supermarket: 'grocery',
+  shopping: 'shopping',
+  attraction: 'tourist_attraction',
+  museum: 'museum',
+  park: 'park',
+  gym: 'gym',
+  cinema: 'cinema',
+  school: 'school',
+  airport: 'airport',
+  bus_station: 'bus_station',
+  train_station: 'train_station',
+};
+
+// Reverse mapping
+const searchCategoryToOurs: Record<string, string> = {
+  restaurant: 'restaurant',
+  food: 'restaurant',
+  coffee: 'cafe',
+  cafe: 'cafe',
+  bar: 'bar',
+  pub: 'bar',
+  hotel: 'hotel',
+  lodging: 'hotel',
+  gas_station: 'gas_station',
+  fuel: 'gas_station',
+  parking: 'parking',
+  hospital: 'hospital',
+  pharmacy: 'pharmacy',
+  bank: 'bank',
+  grocery: 'supermarket',
+  supermarket: 'supermarket',
+  shopping: 'shopping',
+  store: 'shopping',
+  tourist_attraction: 'attraction',
+  museum: 'museum',
+  park: 'park',
+  gym: 'gym',
+  fitness: 'gym',
+  cinema: 'cinema',
+  movie_theater: 'cinema',
+  school: 'school',
+  education: 'school',
+  airport: 'airport',
+  bus_station: 'bus_station',
+  train_station: 'train_station',
+};
+
+function transformSearchFeature(feature: any, categoryHint?: string): Place {
+  const properties = feature.properties || {};
+  const geometry = feature.geometry || {};
   
-  return {
-    id: feature.id,
-    name: feature.text || feature.place_name,
-    coordinates: {
+  // Get coordinates
+  let coords = { longitude: 0, latitude: 0 };
+  if (geometry.coordinates) {
+    coords = {
+      longitude: geometry.coordinates[0],
+      latitude: geometry.coordinates[1],
+    };
+  } else if (feature.center) {
+    coords = {
       longitude: feature.center[0],
       latitude: feature.center[1],
-    },
+    };
+  }
+
+  // Determine category
+  let category: string | undefined = categoryHint;
+  if (!category && properties.poi_category) {
+    const cats = properties.poi_category.split(',').map((c: string) => c.trim().toLowerCase());
+    for (const cat of cats) {
+      if (searchCategoryToOurs[cat]) {
+        category = searchCategoryToOurs[cat];
+        break;
+      }
+    }
+  }
+  if (!category && properties.maki) {
+    const makiMap: Record<string, string> = {
+      restaurant: 'restaurant',
+      cafe: 'cafe',
+      bar: 'bar',
+      beer: 'bar',
+      lodging: 'hotel',
+      fuel: 'gas_station',
+      parking: 'parking',
+      hospital: 'hospital',
+      pharmacy: 'pharmacy',
+      bank: 'bank',
+      grocery: 'supermarket',
+      shop: 'shopping',
+      attraction: 'attraction',
+      museum: 'museum',
+      park: 'park',
+      fitness: 'gym',
+      cinema: 'cinema',
+      school: 'school',
+      airport: 'airport',
+      bus: 'bus_station',
+      rail: 'train_station',
+    };
+    category = makiMap[properties.maki];
+  }
+
+  const placeName = properties.name || properties.text || feature.text || 
+                    properties.place_name || feature.place_name || 'Unknown Place';
+  
+  const address = properties.full_address || properties.place_formatted || 
+                  properties.address || feature.place_name || '';
+
+  return {
+    id: properties.mapbox_id || feature.id || `place-${Date.now()}-${Math.random()}`,
+    name: placeName,
+    coordinates: coords,
     category,
     categoryIcon: category ? PLACE_CATEGORIES.find(c => c.id === category)?.icon || '📍' : '📍',
-    address: feature.place_name,
+    address,
     bbox: feature.bbox,
   };
+}
+
+function getCategorySearchTerms(category?: string): string[] {
+  if (!category) {
+    return ['restaurant', 'cafe', 'bar', 'shop', 'hotel'];
+  }
+
+  const terms: Record<string, string[]> = {
+    restaurant: ['restaurant', 'dining', 'food'],
+    cafe: ['coffee shop', 'cafe', 'coffee'],
+    bar: ['bar', 'pub', 'lounge'],
+    hotel: ['hotel', 'inn', 'lodging'],
+    gas_station: ['gas station', 'fuel', 'petrol'],
+    parking: ['parking', 'car park'],
+    hospital: ['hospital', 'medical center'],
+    pharmacy: ['pharmacy', 'drugstore'],
+    bank: ['bank', 'atm'],
+    supermarket: ['supermarket', 'grocery'],
+    shopping: ['shop', 'store', 'mall'],
+    attraction: ['attraction', 'landmark'],
+    museum: ['museum', 'gallery'],
+    park: ['park', 'garden'],
+    gym: ['gym', 'fitness'],
+    cinema: ['cinema', 'movie theater'],
+    school: ['school', 'university'],
+    airport: ['airport'],
+    bus_station: ['bus station', 'bus stop'],
+    train_station: ['train station', 'railway'],
+  };
+
+  return terms[category] || ['point of interest'];
 }
 
 export const placesService = {
   async searchPlaces(request: PlaceSearchRequest): Promise<Place[]> {
     if (IS_DEMO_MODE) {
-      // Use direct Mapbox API in demo mode
       if (!MAPBOX_TOKEN) {
         throw new Error('Mapbox token not configured');
       }
 
       try {
-        const proximityParam = request.coordinates
-          ? `&proximity=${request.coordinates.longitude},${request.coordinates.latitude}`
-          : '';
-        const bboxParam = request.bbox ? `&bbox=${request.bbox.join(',')}` : '';
-        const limitParam = request.limit ? `&limit=${request.limit}` : '&limit=20';
-        
-        // Map category to Mapbox types
-        let typesParam = '';
+        const params = new URLSearchParams({
+          q: request.query,
+          access_token: MAPBOX_TOKEN,
+          limit: (request.limit || 10).toString(),
+          language: 'en',
+        });
+
+        if (request.coordinates) {
+          params.append('proximity', `${request.coordinates.longitude},${request.coordinates.latitude}`);
+        }
+
         if (request.category) {
-          const category = PLACE_CATEGORIES.find(c => c.id === request.category);
-          if (category?.keywords) {
-            // Use first keyword as type filter
-            typesParam = `&types=${category.keywords[0]}`;
+          const mapboxCategory = categoryToSearchCategory[request.category];
+          if (mapboxCategory) {
+            params.append('types', 'poi');
+            params.append('poi_category', mapboxCategory);
           }
         }
 
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(request.query)}.json?access_token=${MAPBOX_TOKEN}${proximityParam}${bboxParam}${limitParam}${typesParam}`;
-        
+        const url = `${SEARCH_API_URL}/forward?${params.toString()}`;
         const response = await fetch(url);
         const data = await response.json();
 
@@ -68,7 +204,8 @@ export const placesService = {
           throw new Error(data.error.message || 'Places search failed');
         }
 
-        return data.features.map((feature: any) => transformMapboxFeature(feature));
+        if (!data.features) return [];
+        return data.features.map((f: any) => transformSearchFeature(f, request.category));
       } catch (error) {
         console.error('Places search error:', error);
         throw error;
@@ -89,43 +226,88 @@ export const placesService = {
 
   async getNearbyPlaces(request: NearbyPlacesRequest): Promise<Place[]> {
     if (IS_DEMO_MODE) {
-      // Use direct Mapbox API in demo mode
       if (!MAPBOX_TOKEN) {
         throw new Error('Mapbox token not configured');
       }
 
       try {
-        const radius = request.radius || 1000;
         const limit = request.limit || 20;
         
-        // Calculate bounding box from radius
-        const latDelta = radius / 111000;
-        const lngDelta = radius / (111000 * Math.cos((request.coordinates.latitude * Math.PI) / 180));
-        const bbox: [number, number, number, number] = [
-          request.coordinates.longitude - lngDelta,
-          request.coordinates.latitude - latDelta,
-          request.coordinates.longitude + lngDelta,
-          request.coordinates.latitude + latDelta,
-        ];
-        
-        const query = request.category || 'poi';
-        const category = PLACE_CATEGORIES.find(c => c.id === request.category);
-        const typesParam = category?.keywords ? `&types=${category.keywords[0]}` : '&types=poi';
-        
-        const proximityParam = `&proximity=${request.coordinates.longitude},${request.coordinates.latitude}`;
-        const bboxParam = `&bbox=${bbox.join(',')}`;
-        const limitParam = `&limit=${limit}`;
+        // Try category endpoint first
+        if (request.category) {
+          const mapboxCategory = categoryToSearchCategory[request.category];
+          if (mapboxCategory) {
+            try {
+              const params = new URLSearchParams({
+                access_token: MAPBOX_TOKEN,
+                proximity: `${request.coordinates.longitude},${request.coordinates.latitude}`,
+                limit: limit.toString(),
+                language: 'en',
+              });
 
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}${proximityParam}${bboxParam}${limitParam}${typesParam}`;
-        
-        const response = await fetch(url);
-        const data = await response.json();
+              const url = `${SEARCH_API_URL}/category/${mapboxCategory}?${params.toString()}`;
+              const response = await fetch(url);
+              const data = await response.json();
 
-        if (data.error) {
-          throw new Error(data.error.message || 'Nearby places search failed');
+              if (data.features && data.features.length > 0) {
+                return data.features.map((f: any) => transformSearchFeature(f, request.category));
+              }
+            } catch (categoryError) {
+              console.warn('Category search failed, falling back:', categoryError);
+            }
+          }
         }
 
-        return data.features.map((feature: any) => transformMapboxFeature(feature));
+        // Fallback to forward search with category terms
+        const searchTerms = getCategorySearchTerms(request.category);
+        const allResults: Place[] = [];
+        const seenIds = new Set<string>();
+
+        for (const term of searchTerms.slice(0, 3)) {
+          try {
+            const params = new URLSearchParams({
+              q: term,
+              access_token: MAPBOX_TOKEN,
+              proximity: `${request.coordinates.longitude},${request.coordinates.latitude}`,
+              limit: '10',
+              types: 'poi',
+              language: 'en',
+            });
+
+            const url = `${SEARCH_API_URL}/forward?${params.toString()}`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.features) {
+              for (const feature of data.features) {
+                const id = feature.properties?.mapbox_id || feature.id;
+                if (!seenIds.has(id)) {
+                  seenIds.add(id);
+                  const place = transformSearchFeature(feature, request.category);
+                  
+                  // Filter by radius
+                  if (request.radius) {
+                    const distance = calculateDistance(
+                      request.coordinates.latitude,
+                      request.coordinates.longitude,
+                      place.coordinates.latitude,
+                      place.coordinates.longitude
+                    );
+                    if (distance <= request.radius) {
+                      allResults.push(place);
+                    }
+                  } else {
+                    allResults.push(place);
+                  }
+                }
+              }
+            }
+          } catch (termError) {
+            console.warn(`Search term "${term}" failed:`, termError);
+          }
+        }
+
+        return allResults.slice(0, limit);
       } catch (error) {
         console.error('Nearby places error:', error);
         throw error;
@@ -146,22 +328,22 @@ export const placesService = {
 
   async getPlaceDetails(placeId: string): Promise<Place> {
     if (IS_DEMO_MODE) {
-      // Use direct Mapbox API in demo mode
       if (!MAPBOX_TOKEN) {
         throw new Error('Mapbox token not configured');
       }
 
       try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${placeId}.json?access_token=${MAPBOX_TOKEN}`;
-        
+        // Try retrieve endpoint
+        const url = `${SEARCH_API_URL}/retrieve/${placeId}?access_token=${MAPBOX_TOKEN}`;
         const response = await fetch(url);
         const data = await response.json();
 
-        if (data.error || !data.features || data.features.length === 0) {
-          throw new Error('Place not found');
+        if (data.features && data.features.length > 0) {
+          const place = transformSearchFeature(data.features[0]);
+          return enhancePlaceDetails(place);
         }
 
-        return transformMapboxFeature(data.features[0]);
+        throw new Error('Place not found');
       } catch (error) {
         console.error('Place details error:', error);
         throw error;
@@ -177,3 +359,61 @@ export const placesService = {
   },
 };
 
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
+function enhancePlaceDetails(place: Place): Place {
+  const query = place.category || 'place';
+  const encodedQuery = encodeURIComponent(query);
+  
+  // Generate consistent rating/review based on place name
+  const hash = place.name.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
+  const normalized = Math.abs(hash % 100) / 100;
+  
+  return {
+    ...place,
+    rating: Math.round((3.5 + normalized * 1.5) * 10) / 10,
+    reviewCount: 50 + Math.abs(hash % 300),
+    priceLevel: place.category === 'restaurant' || place.category === 'hotel' ? 2 + (hash % 2) : 1 + (hash % 2),
+    photos: [
+      {
+        id: 'main',
+        url: `https://source.unsplash.com/800x600/?${encodedQuery}`,
+        width: 800,
+        height: 600,
+        attribution: 'Unsplash',
+      },
+      {
+        id: 'thumb1',
+        url: `https://source.unsplash.com/400x300/?${encodedQuery},interior`,
+        width: 400,
+        height: 300,
+        attribution: 'Unsplash',
+      },
+    ],
+    description: `${place.name}. A popular ${place.category || 'destination'} worth visiting.`,
+    openingHours: {
+      openNow: hash % 3 !== 0,
+      weekdayText: [
+        'Monday: 9:00 AM – 6:00 PM',
+        'Tuesday: 9:00 AM – 6:00 PM',
+        'Wednesday: 9:00 AM – 6:00 PM',
+        'Thursday: 9:00 AM – 6:00 PM',
+        'Friday: 9:00 AM – 8:00 PM',
+        'Saturday: 10:00 AM – 6:00 PM',
+        'Sunday: 10:00 AM – 4:00 PM',
+      ],
+    },
+  };
+}

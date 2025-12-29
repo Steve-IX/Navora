@@ -9,10 +9,11 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
 interface MapViewProps {
   onMapClick?: (coordinates: Coordinates) => void;
+  onPoiClick?: (poi: { name: string; coordinates: Coordinates; category?: string }) => void;
   children?: React.ReactNode;
 }
 
-export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
+export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, children }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -64,6 +65,9 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
       if (trafficEnabled) {
         addTrafficLayer();
       }
+
+      // Setup POI click handling
+      setupPoiClickHandler();
     });
 
     map.current.on('move', () => {
@@ -88,6 +92,43 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     });
 
     map.current.on('click', (e) => {
+      // Check if we clicked on a POI first
+      const features = map.current?.queryRenderedFeatures(e.point, {
+        layers: getPoiLayers(),
+      });
+
+      if (features && features.length > 0 && onPoiClick) {
+        const feature = features[0];
+        const name = feature.properties?.name || feature.properties?.name_en || 'Unknown Place';
+        const geometry = feature.geometry as GeoJSON.Point;
+        
+        // Determine category from feature
+        let category: string | undefined;
+        const maki = feature.properties?.maki;
+        const type = feature.properties?.type;
+        const poiClass = feature.layer?.id || '';
+        
+        if (maki) {
+          category = mapMakiToCategory(maki);
+        } else if (type) {
+          category = type;
+        } else if (poiClass.includes('poi')) {
+          category = 'attraction';
+        } else if (poiClass.includes('place')) {
+          category = 'place';
+        }
+
+        onPoiClick({
+          name,
+          coordinates: {
+            longitude: geometry.coordinates[0],
+            latitude: geometry.coordinates[1],
+          },
+          category,
+        });
+        return; // Don't propagate to onMapClick
+      }
+
       if (onMapClick) {
         onMapClick({
           longitude: e.lngLat.lng,
@@ -104,6 +145,73 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     };
   }, []);
 
+  const getPoiLayers = (): string[] => {
+    // Common POI layer names in Mapbox styles
+    return [
+      'poi-label',
+      'place-label',
+      'airport-label',
+      'transit-label',
+      'natural-point-label',
+      'water-point-label',
+    ];
+  };
+
+  const mapMakiToCategory = (maki: string): string => {
+    const map: Record<string, string> = {
+      restaurant: 'restaurant',
+      cafe: 'cafe',
+      bar: 'bar',
+      beer: 'bar',
+      lodging: 'hotel',
+      fuel: 'gas_station',
+      parking: 'parking',
+      hospital: 'hospital',
+      pharmacy: 'pharmacy',
+      bank: 'bank',
+      grocery: 'supermarket',
+      shop: 'shopping',
+      attraction: 'attraction',
+      museum: 'museum',
+      park: 'park',
+      garden: 'park',
+      fitness: 'gym',
+      cinema: 'cinema',
+      school: 'school',
+      college: 'school',
+      airport: 'airport',
+      bus: 'bus_station',
+      rail: 'train_station',
+      marker: 'attraction',
+    };
+    return map[maki] || 'attraction';
+  };
+
+  const setupPoiClickHandler = () => {
+    if (!map.current) return;
+
+    const poiLayers = getPoiLayers();
+    
+    // Check which layers actually exist in the style
+    const existingLayers = poiLayers.filter(layer => {
+      try {
+        return map.current?.getLayer(layer);
+      } catch {
+        return false;
+      }
+    });
+
+    existingLayers.forEach(layerId => {
+      map.current!.on('mouseenter', layerId, () => {
+        map.current!.getCanvas().style.cursor = 'pointer';
+      });
+
+      map.current!.on('mouseleave', layerId, () => {
+        map.current!.getCanvas().style.cursor = '';
+      });
+    });
+  };
+
   // Update map style when layer changes
   useEffect(() => {
     if (map.current && isLoaded) {
@@ -113,6 +221,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
         if (trafficEnabled) {
           addTrafficLayer();
         }
+        setupPoiClickHandler();
       });
     }
   }, [layer, isLoaded]);
@@ -184,7 +293,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     map.current.addSource(sourceId, {
       type: 'geojson',
       data: geojson,
-      cluster: markers.length > 10, // Enable clustering if more than 10 markers
+      cluster: markers.length > 10,
       clusterMaxZoom: 14,
       clusterRadius: 50,
     });
@@ -420,7 +529,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
       map.current.removeLayer('3d-buildings');
     }
 
-    // Add 3D buildings layer (only on standard/satellite styles, not terrain)
+    // Add 3D buildings layer
     if ((layer === 'standard' || layer === 'satellite') && map.current.getSource('composite')) {
       map.current.addLayer({
         id: '3d-buildings',

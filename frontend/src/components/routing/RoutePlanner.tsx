@@ -11,12 +11,12 @@ import { NavigationMode } from '../navigation/NavigationMode';
 import { BottomSheet } from '../ui/BottomSheet';
 import { ShareButton } from '../sharing/ShareButton';
 
-const profiles: { value: RoutingProfile; label: string; icon: string }[] = [
-  { value: 'driving', label: 'Driving', icon: '🚗' },
-  { value: 'walking', label: 'Walking', icon: '🚶' },
-  { value: 'cycling', label: 'Cycling', icon: '🚴' },
-  { value: 'transit', label: 'Transit', icon: '🚌' },
-  { value: 'flight', label: 'Flight', icon: '✈️' },
+const profiles: { value: RoutingProfile; icon: string; title: string }[] = [
+  { value: 'driving', icon: '🚗', title: 'Drive' },
+  { value: 'walking', icon: '🚶', title: 'Walk' },
+  { value: 'cycling', icon: '🚴', title: 'Bike' },
+  { value: 'transit', icon: '🚌', title: 'Transit' },
+  { value: 'flight', icon: '✈️', title: 'Flight' },
 ];
 
 export const RoutePlanner: React.FC = () => {
@@ -26,6 +26,7 @@ export const RoutePlanner: React.FC = () => {
   const [toQuery, setToQuery] = useState('');
   const [fromSuggestions, setFromSuggestions] = useState<any[]>([]);
   const [toSuggestions, setToSuggestions] = useState<any[]>([]);
+  const [showDirections, setShowDirections] = useState(false);
 
   const {
     waypoints,
@@ -45,7 +46,7 @@ export const RoutePlanner: React.FC = () => {
   } = useRouteStore();
 
   const { addRoute, clearRoutes } = useMapStore();
-  const { bottomSheetOpen, bottomSheetContent, setBottomSheetOpen, setBottomSheetContent } = useUIStore();
+  const { setBottomSheetOpen, setBottomSheetContent } = useUIStore();
   const { currentLocation } = useLocationStore();
 
   // Auto-fill "from" with current location when it becomes available
@@ -53,21 +54,18 @@ export const RoutePlanner: React.FC = () => {
     if (!currentLocation) return;
 
     if (waypoints.length === 0) {
-      // Set current location as first waypoint
       addWaypoint({
         coordinates: currentLocation,
         name: 'Current Location',
       });
       setFromQuery('Current Location');
     } else {
-      // Update first waypoint if it's "Current Location" and location changed significantly
       const firstWaypoint = waypoints[0];
       if (firstWaypoint && firstWaypoint.name === 'Current Location') {
         const distance = Math.sqrt(
           Math.pow(currentLocation.latitude - firstWaypoint.coordinates.latitude, 2) +
           Math.pow(currentLocation.longitude - firstWaypoint.coordinates.longitude, 2)
         );
-        // Update if moved more than ~100 meters (roughly 0.001 degrees)
         if (distance > 0.001) {
           removeWaypoint(0);
           addWaypoint({
@@ -97,7 +95,7 @@ export const RoutePlanner: React.FC = () => {
 
   const handleCalculateRoute = async () => {
     if (waypoints.length < 2) {
-      setError('Please provide at least two waypoints');
+      setError('Please enter a destination');
       return;
     }
 
@@ -114,11 +112,8 @@ export const RoutePlanner: React.FC = () => {
       });
 
       setRoutes(response.routes);
-
-      // Clear existing routes from map
       clearRoutes();
 
-      // Add routes to map
       response.routes.forEach((route, index) => {
         addRoute({
           ...route,
@@ -147,142 +142,143 @@ export const RoutePlanner: React.FC = () => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+    return `${minutes} min`;
   };
 
-  return (
-    <div className="absolute bottom-4 left-4 right-4 z-20 max-w-md mx-auto">
-      <div className="bg-white rounded-lg shadow-lg p-4">
-        {!isOpen ? (
-          <button
-            onClick={() => setIsOpen(true)}
-            className="w-full px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
-          >
-            Plan Route
-          </button>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Route Planner</h2>
-              <button
-                onClick={() => {
-                  setIsOpen(false);
-                  clearRoute();
-                  clearRoutes();
-                }}
-                className="text-gray-500 hover:text-gray-700"
-                aria-label="Close route planner"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
+  const handleClose = () => {
+    setIsOpen(false);
+    setShowDirections(false);
+    clearRoute();
+    clearRoutes();
+    setFromQuery('');
+    setToQuery('');
+  };
 
-            <div className="space-y-2">
-              <div className="relative">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={fromQuery}
-                    onChange={(e) => setFromQuery(e.target.value)}
-                    placeholder="From"
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                  {currentLocation && (
-                    <button
-                      onClick={() => {
-                        setFromQuery('Current Location');
-                        if (waypoints.length === 0) {
-                          addWaypoint({
-                            coordinates: currentLocation,
-                            name: 'Current Location',
-                          });
-                        } else {
-                          removeWaypoint(0);
-                          addWaypoint({
-                            coordinates: currentLocation,
-                            name: 'Current Location',
-                          });
-                        }
-                      }}
-                      className="px-3 py-2 bg-primary-100 text-primary-700 rounded-md hover:bg-primary-200 transition-colors text-sm font-medium"
-                      title="Use current location"
-                    >
-                      📍
-                    </button>
-                  )}
-                </div>
+  if (!isOpen) {
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        className="absolute bottom-4 left-4 z-20 px-4 py-3 bg-white text-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center gap-2 font-medium"
+      >
+        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+        Directions
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <div className="absolute top-4 left-4 z-20 w-80">
+        <div className="bg-white rounded-xl shadow-xl overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-800">Directions</h2>
+            <button
+              onClick={handleClose}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Inputs */}
+          <div className="p-3 space-y-2">
+            {/* From Input */}
+            <div className="relative flex items-center gap-2">
+              <div className="flex-shrink-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white shadow" />
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={fromQuery}
+                  onChange={(e) => setFromQuery(e.target.value)}
+                  placeholder="Starting point"
+                  className="w-full px-3 py-2 text-sm bg-gray-50 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                />
+                {currentLocation && fromQuery !== 'Current Location' && (
+                  <button
+                    onClick={() => {
+                      setFromQuery('Current Location');
+                      if (waypoints.length === 0) {
+                        addWaypoint({ coordinates: currentLocation, name: 'Current Location' });
+                      } else {
+                        removeWaypoint(0);
+                        addWaypoint({ coordinates: currentLocation, name: 'Current Location' });
+                      }
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-blue-600 hover:bg-blue-50 rounded"
+                    title="Use current location"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+                    </svg>
+                  </button>
+                )}
                 {fromSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-30 max-h-48 overflow-y-auto">
-                    {fromSuggestions.map((suggestion) => (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                    {fromSuggestions.map((s) => (
                       <button
-                        key={suggestion.id}
+                        key={s.id}
                         onClick={() => {
-                          setFromQuery(suggestion.placeName);
+                          setFromQuery(s.placeName);
                           setFromSuggestions([]);
                           if (waypoints.length === 0) {
-                            addWaypoint({
-                              coordinates: suggestion.coordinates,
-                              name: suggestion.placeName,
-                            });
+                            addWaypoint({ coordinates: s.coordinates, name: s.placeName });
                           } else {
-                            // Update first waypoint
                             removeWaypoint(0);
-                            addWaypoint({
-                              coordinates: suggestion.coordinates,
-                              name: suggestion.placeName,
-                            });
+                            addWaypoint({ coordinates: s.coordinates, name: s.placeName });
                           }
                         }}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-50"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 truncate"
                       >
-                        {suggestion.placeName}
+                        {s.placeName}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
+            </div>
 
-              <div className="relative">
+            {/* Connector Line */}
+            <div className="flex items-center gap-2">
+              <div className="flex-shrink-0 w-3 flex justify-center">
+                <div className="w-0.5 h-4 bg-gray-300" />
+              </div>
+            </div>
+
+            {/* To Input */}
+            <div className="relative flex items-center gap-2">
+              <div className="flex-shrink-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow" />
+              <div className="flex-1 relative">
                 <input
                   type="text"
                   value={toQuery}
                   onChange={(e) => setToQuery(e.target.value)}
-                  placeholder="To"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Destination"
+                  className="w-full px-3 py-2 text-sm bg-gray-50 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 />
                 {toSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-30 max-h-48 overflow-y-auto">
-                    {toSuggestions.map((suggestion) => (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                    {toSuggestions.map((s) => (
                       <button
-                        key={suggestion.id}
+                        key={s.id}
                         onClick={() => {
-                          setToQuery(suggestion.placeName);
+                          setToQuery(s.placeName);
                           setToSuggestions([]);
                           if (waypoints.length <= 1) {
-                            addWaypoint({
-                              coordinates: suggestion.coordinates,
-                              name: suggestion.placeName,
-                            });
+                            addWaypoint({ coordinates: s.coordinates, name: s.placeName });
                           } else {
-                            // Update last waypoint
-                            const lastIndex = waypoints.length - 1;
-                            removeWaypoint(lastIndex);
-                            addWaypoint({
-                              coordinates: suggestion.coordinates,
-                              name: suggestion.placeName,
-                            });
+                            removeWaypoint(waypoints.length - 1);
+                            addWaypoint({ coordinates: s.coordinates, name: s.placeName });
                           }
                         }}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-50"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 truncate"
                       >
-                        {suggestion.placeName}
+                        {s.placeName}
                       </button>
                     ))}
                   </div>
@@ -290,129 +286,91 @@ export const RoutePlanner: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto">
-              {profiles.map((profile) => (
+            {/* Transport Mode Buttons */}
+            <div className="flex gap-1 pt-1">
+              {profiles.map((p) => (
                 <button
-                  key={profile.value}
-                  onClick={() => setProfile(profile.value)}
-                  className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-                    selectedProfile === profile.value
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  key={p.value}
+                  onClick={() => setProfile(p.value)}
+                  title={p.title}
+                  className={`flex-1 py-2 rounded-lg text-lg transition-all ${
+                    selectedProfile === p.value
+                      ? 'bg-blue-100 ring-2 ring-blue-500'
+                      : 'bg-gray-100 hover:bg-gray-200'
                   }`}
                 >
-                  <span className="mr-1">{profile.icon}</span>
-                  {profile.label}
+                  {p.icon}
                 </button>
               ))}
             </div>
 
             {error && (
-              <div className="text-red-600 text-sm bg-red-50 p-2 rounded">{error}</div>
+              <div className="text-red-600 text-xs bg-red-50 px-2 py-1 rounded">{error}</div>
             )}
 
+            {/* Calculate Button */}
             <button
               onClick={handleCalculateRoute}
               disabled={isLoading || waypoints.length < 2}
-              className="w-full px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
-              {isLoading ? 'Calculating...' : 'Calculate Route'}
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Calculating...
+                </span>
+              ) : (
+                'Get Directions'
+              )}
             </button>
+          </div>
 
-            {selectedRoute && (
-              <div className="border-t pt-4 space-y-2">
-                <button
-                  onClick={() => setShowNavigation(true)}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium mb-2"
-                >
-                  Start Navigation
-                </button>
-                <button
-                  onClick={() => {
-                    setBottomSheetContent('route');
-                    setBottomSheetOpen(true);
-                  }}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium mb-2"
-                >
-                  View Directions
-                </button>
-                
-                {/* Flight Information (if available) */}
-                {selectedRoute.flightInfo && (
-                  <div className="bg-blue-50 p-3 rounded-lg space-y-2 mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">✈️</span>
-                      <span className="font-semibold text-blue-900">
-                        {selectedRoute.flightInfo.airline}
-                        {selectedRoute.flightInfo.flightNumber && ` ${selectedRoute.flightInfo.flightNumber}`}
-                      </span>
-                    </div>
-                    <div className="text-sm text-blue-800 space-y-1">
-                      <div className="flex justify-between">
-                        <span>From:</span>
-                        <span className="font-medium">
-                          {selectedRoute.flightInfo.departureAirport}
-                          {selectedRoute.flightInfo.departureIata && ` (${selectedRoute.flightInfo.departureIata})`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>To:</span>
-                        <span className="font-medium">
-                          {selectedRoute.flightInfo.arrivalAirport}
-                          {selectedRoute.flightInfo.arrivalIata && ` (${selectedRoute.flightInfo.arrivalIata})`}
-                        </span>
-                      </div>
-                      {selectedRoute.flightInfo.scheduledDeparture && (
-                        <div className="flex justify-between">
-                          <span>Departure:</span>
-                          <span className="font-medium">
-                            {new Date(selectedRoute.flightInfo.scheduledDeparture).toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                      {selectedRoute.flightInfo.scheduledArrival && (
-                        <div className="flex justify-between">
-                          <span>Arrival:</span>
-                          <span className="font-medium">
-                            {new Date(selectedRoute.flightInfo.scheduledArrival).toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                      {selectedRoute.flightInfo.flightStatus && (
-                        <div className="flex justify-between">
-                          <span>Status:</span>
-                          <span className={`font-medium capitalize ${
-                            selectedRoute.flightInfo.flightStatus === 'active' ? 'text-green-600' :
-                            selectedRoute.flightInfo.flightStatus === 'scheduled' ? 'text-blue-600' :
-                            selectedRoute.flightInfo.flightStatus === 'landed' ? 'text-gray-600' :
-                            'text-orange-600'
-                          }`}>
-                            {selectedRoute.flightInfo.flightStatus}
-                          </span>
-                        </div>
-                      )}
-                      {selectedRoute.flightInfo.aircraft && (
-                        <div className="flex justify-between">
-                          <span>Aircraft:</span>
-                          <span className="font-medium">{selectedRoute.flightInfo.aircraft}</span>
-                        </div>
-                      )}
-                    </div>
+          {/* Route Result */}
+          {selectedRoute && (
+            <div className="border-t border-gray-100">
+              {/* Summary Row */}
+              <div className="flex items-center justify-between px-3 py-3 bg-gradient-to-r from-blue-50 to-white">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{profiles.find(p => p.value === selectedProfile)?.icon}</span>
+                  <div>
+                    <div className="text-lg font-bold text-gray-900">{formatDuration(selectedRoute.duration)}</div>
+                    <div className="text-sm text-gray-500">{formatDistance(selectedRoute.distance)}</div>
                   </div>
-                )}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setShowNavigation(true)}
+                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Start
+                  </button>
+                  <button
+                    onClick={() => setShowDirections(!showDirections)}
+                    className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    {showDirections ? 'Hide' : 'Steps'}
+                  </button>
+                  <ShareButton
+                    route={{
+                      waypoints,
+                      profile: selectedProfile,
+                      distance: selectedRoute.distance,
+                      duration: selectedRoute.duration,
+                    }}
+                    compact
+                  />
+                </div>
+              </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Distance:</span>
-                  <span>{formatDistance(selectedRoute.distance)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Duration:</span>
-                  <span>{formatDuration(selectedRoute.duration)}</span>
-                </div>
-                {routes.length > 1 && (
-                  <div className="space-y-1">
-                    <div className="text-sm font-medium">Alternative routes:</div>
-                    {routes.slice(1).map((route, index) => (
+              {/* Alternative Routes */}
+              {routes.length > 1 && (
+                <div className="px-3 py-2 border-t border-gray-100 bg-gray-50">
+                  <div className="text-xs text-gray-500 mb-1">Alternatives</div>
+                  <div className="flex gap-2 overflow-x-auto">
+                    {routes.map((route, index) => (
                       <button
                         key={index}
                         onClick={() => {
@@ -422,48 +380,56 @@ export const RoutePlanner: React.FC = () => {
                             addRoute({
                               ...r,
                               id: `route-${i}`,
-                              color: i === index + 1 ? '#3b82f6' : '#94a3b8',
-                              width: i === index + 1 ? 4 : 2,
+                              color: i === index ? '#3b82f6' : '#94a3b8',
+                              width: i === index ? 4 : 2,
                             });
                           });
                         }}
-                        className="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded text-sm"
+                        className={`flex-shrink-0 px-2 py-1 rounded text-xs transition-colors ${
+                          selectedRoute === route
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        }`}
                       >
-                        {formatDistance(route.distance)} • {formatDuration(route.duration)}
+                        {formatDuration(route.duration)} · {formatDistance(route.distance)}
                       </button>
                     ))}
                   </div>
-                )}
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <button
-                    onClick={() => setShowNavigation(true)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
-                  >
-                    Start Navigation
-                  </button>
-                  <button
-                    onClick={() => {
-                      setBottomSheetContent('route');
-                      setBottomSheetOpen(true);
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
-                  >
-                    View Directions
-                  </button>
                 </div>
-                <ShareButton
-                  route={{
-                    waypoints,
-                    profile: selectedProfile,
-                    distance: selectedRoute.distance,
-                    duration: selectedRoute.duration,
-                  }}
-                  className="w-full mt-2"
-                />
-              </div>
-            )}
-          </div>
-        )}
+              )}
+
+              {/* Flight Info (compact) */}
+              {selectedRoute.flightInfo && (
+                <div className="px-3 py-2 border-t border-gray-100 bg-blue-50">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-blue-900">
+                      ✈️ {selectedRoute.flightInfo.airline} {selectedRoute.flightInfo.flightNumber || ''}
+                    </span>
+                    {selectedRoute.flightInfo.flightStatus && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        selectedRoute.flightInfo.flightStatus === 'active' ? 'bg-green-100 text-green-700' :
+                        selectedRoute.flightInfo.flightStatus === 'scheduled' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {selectedRoute.flightInfo.flightStatus}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-blue-700 mt-1">
+                    {selectedRoute.flightInfo.departureIata} → {selectedRoute.flightInfo.arrivalIata}
+                  </div>
+                </div>
+              )}
+
+              {/* Inline Directions */}
+              {showDirections && (
+                <div className="border-t border-gray-100 max-h-64 overflow-y-auto">
+                  <DirectionsList route={selectedRoute} compact />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Navigation Mode */}
@@ -474,9 +440,9 @@ export const RoutePlanner: React.FC = () => {
         />
       )}
 
-      {/* Bottom Sheet for Directions */}
+      {/* Bottom Sheet for Full Directions */}
       <BottomSheet
-        isOpen={bottomSheetOpen && bottomSheetContent === 'route'}
+        isOpen={false}
         onClose={() => {
           setBottomSheetOpen(false);
           setBottomSheetContent(null);
@@ -486,7 +452,6 @@ export const RoutePlanner: React.FC = () => {
       >
         {selectedRoute && <DirectionsList route={selectedRoute} />}
       </BottomSheet>
-    </div>
+    </>
   );
 };
-
