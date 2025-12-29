@@ -1,5 +1,7 @@
 # GPS Mapping Web Application
 
+<!-- Last deployment: 2024-12-19 -->
+
 A production-ready, full-stack GPS mapping web application with React/TypeScript frontend, NestJS backend, PostgreSQL/PostGIS database, and Mapbox integration. This application provides interactive maps, geocoding, routing, GPS tracking, and comprehensive user features comparable to Google Maps.
 
 ## Features
