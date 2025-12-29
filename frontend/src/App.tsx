@@ -17,6 +17,7 @@ import { geocodingService } from './services/api/geocoding.service';
 import { useRouteStore } from './stores/routeStore';
 import { Coordinates } from '@shared/types/geocoding';
 import { Place } from '@shared/types/places';
+import { getPlaceholderImage, getPlaceholderThumbnail } from './utils/placeholders';
 
 // Check if running in demo mode (frontend-only, no backend)
 const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.env.VITE_API_URL;
@@ -332,8 +333,6 @@ function getCategoryIcon(category?: string): string {
 function generatePlaceEnhancements(place: Place): Partial<Place> {
   const hash = place.name.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
   const normalized = Math.abs(hash % 100) / 100;
-  const query = place.category || 'place';
-  const encodedQuery = encodeURIComponent(query);
 
   return {
     rating: Math.round((3.5 + normalized * 1.5) * 10) / 10,
@@ -342,17 +341,17 @@ function generatePlaceEnhancements(place: Place): Partial<Place> {
     photos: [
       {
         id: 'main',
-        url: `https://source.unsplash.com/800x600/?${encodedQuery}`,
+        url: getPlaceholderImage(place.name, 800, 600),
         width: 800,
         height: 600,
-        attribution: 'Unsplash',
+        attribution: 'Placeholder',
       },
       {
         id: 'thumb1',
-        url: `https://source.unsplash.com/400x300/?${encodedQuery},interior`,
+        url: getPlaceholderThumbnail(0, 400, 300),
         width: 400,
         height: 300,
-        attribution: 'Unsplash',
+        attribution: 'Placeholder',
       },
     ],
     description: `${place.name} is a popular ${place.category || 'destination'} worth visiting.`,

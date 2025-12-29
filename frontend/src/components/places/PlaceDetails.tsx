@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Place } from '@shared/types/places';
 import { useMapStore } from '@/stores/mapStore';
+import { useRouteStore } from '@/stores/routeStore';
+import { useLocationStore } from '@/stores/locationStore';
 import { ShareButton } from '../sharing/ShareButton';
 import { placesService } from '@/services/api/places.service';
 import { getPlaceholderImage, getPlaceholderThumbnail } from '@/utils/placeholders';
@@ -12,6 +14,8 @@ interface PlaceDetailsProps {
 
 export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) => {
   const { setCenter, addMarker, removeMarker } = useMapStore();
+  const { addWaypoint, clearRoute, setProfile } = useRouteStore();
+  const { currentLocation } = useLocationStore();
   const [detailedPlace, setDetailedPlace] = useState<Place | null>(place);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
@@ -43,6 +47,34 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
       title: displayPlace.name,
       color: '#ef4444',
     });
+
+    // Integrate with route planner
+    // Clear existing waypoints and set up route from current location to this place
+    clearRoute();
+    
+    // Add current location as starting point if available
+    if (currentLocation) {
+      addWaypoint({
+        coordinates: currentLocation,
+        name: 'Current Location',
+      });
+    }
+    
+    // Add this place as destination
+    addWaypoint({
+      coordinates: displayPlace.coordinates,
+      name: displayPlace.name,
+    });
+
+    // Set default profile to driving
+    setProfile('driving');
+
+    // Close the side panel to show the route planner
+    onClose();
+    
+    // Trigger route planner to open by dispatching a custom event
+    // The RoutePlanner component will listen for this event
+    window.dispatchEvent(new CustomEvent('openRoutePlanner'));
   };
 
   const renderStars = (rating: number) => {

@@ -49,6 +49,25 @@ export const RoutePlanner: React.FC = () => {
   const { setBottomSheetOpen, setBottomSheetContent } = useUIStore();
   const { currentLocation } = useLocationStore();
 
+  // Listen for openRoutePlanner event
+  useEffect(() => {
+    const handleOpenRoutePlanner = () => {
+      setIsOpen(true);
+      // Update queries based on waypoints
+      if (waypoints.length > 0) {
+        setFromQuery(waypoints[0].name || '');
+      }
+      if (waypoints.length > 1) {
+        setToQuery(waypoints[waypoints.length - 1].name || '');
+      }
+    };
+
+    window.addEventListener('openRoutePlanner', handleOpenRoutePlanner);
+    return () => {
+      window.removeEventListener('openRoutePlanner', handleOpenRoutePlanner);
+    };
+  }, [waypoints]);
+
   // Auto-fill "from" with current location when it becomes available
   useEffect(() => {
     if (!currentLocation) return;
@@ -76,6 +95,22 @@ export const RoutePlanner: React.FC = () => {
       }
     }
   }, [currentLocation?.latitude, currentLocation?.longitude, waypoints.length, addWaypoint, removeWaypoint]);
+
+  // Update queries when waypoints change (but not from user input)
+  useEffect(() => {
+    if (waypoints.length > 0) {
+      const firstWaypointName = waypoints[0].name || '';
+      if (fromQuery === '' || fromQuery === 'Current Location') {
+        setFromQuery(firstWaypointName);
+      }
+    }
+    if (waypoints.length > 1) {
+      const lastWaypointName = waypoints[waypoints.length - 1].name || '';
+      if (toQuery === '' || !toQuery) {
+        setToQuery(lastWaypointName);
+      }
+    }
+  }, [waypoints.length]); // Only depend on length to avoid infinite loops
 
   useEffect(() => {
     if (fromQuery.length >= 2 && fromQuery !== 'Current Location') {

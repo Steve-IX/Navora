@@ -98,8 +98,28 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
     map.current.on('click', (e) => {
       // Check if we clicked on a POI first
+      // Only query layers that actually exist in the current style
+      const availableLayers = getPoiLayers().filter(layerName => {
+        try {
+          return map.current?.getLayer(layerName) !== undefined;
+        } catch {
+          return false;
+        }
+      });
+
+      if (availableLayers.length === 0) {
+        // No POI layers available, just handle as regular map click
+        if (onMapClick) {
+          onMapClick({
+            longitude: e.lngLat.lng,
+            latitude: e.lngLat.lat,
+          });
+        }
+        return;
+      }
+
       const features = map.current?.queryRenderedFeatures(e.point, {
-        layers: getPoiLayers(),
+        layers: availableLayers,
       });
 
       if (features && features.length > 0 && onPoiClick) {
