@@ -2,8 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useRouteStore } from '@/stores/routeStore';
 import { routingService } from '@/services/api/routing.service';
 import { useMapStore } from '@/stores/mapStore';
+import { useUIStore } from '@/stores/uiStore';
 import { RoutingProfile } from '@shared/types/routing';
 import { geocodingService } from '@/services/api/geocoding.service';
+import { DirectionsList } from '../navigation/DirectionsList';
+import { NavigationMode } from '../navigation/NavigationMode';
+import { BottomSheet } from '../ui/BottomSheet';
+import { ShareButton } from '../sharing/ShareButton';
 
 const profiles: { value: RoutingProfile; label: string; icon: string }[] = [
   { value: 'driving', label: 'Driving', icon: '🚗' },
@@ -15,6 +20,7 @@ const profiles: { value: RoutingProfile; label: string; icon: string }[] = [
 
 export const RoutePlanner: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showNavigation, setShowNavigation] = useState(false);
   const [fromQuery, setFromQuery] = useState('');
   const [toQuery, setToQuery] = useState('');
   const [fromSuggestions, setFromSuggestions] = useState<any[]>([]);
@@ -38,6 +44,7 @@ export const RoutePlanner: React.FC = () => {
   } = useRouteStore();
 
   const { addRoute, clearRoutes } = useMapStore();
+  const { bottomSheetOpen, bottomSheetContent, setBottomSheetOpen, setBottomSheetContent } = useUIStore();
 
   useEffect(() => {
     if (fromQuery.length >= 2) {
@@ -256,6 +263,22 @@ export const RoutePlanner: React.FC = () => {
 
             {selectedRoute && (
               <div className="border-t pt-4 space-y-2">
+                <button
+                  onClick={() => setShowNavigation(true)}
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium mb-2"
+                >
+                  Start Navigation
+                </button>
+                <button
+                  onClick={() => {
+                    setBottomSheetContent('route');
+                    setBottomSheetOpen(true);
+                  }}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium mb-2"
+                >
+                  View Directions
+                </button>
+                
                 {/* Flight Information (if available) */}
                 {selectedRoute.flightInfo && (
                   <div className="bg-blue-50 p-3 rounded-lg space-y-2 mb-3">
@@ -353,11 +376,58 @@ export const RoutePlanner: React.FC = () => {
                     ))}
                   </div>
                 )}
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    onClick={() => setShowNavigation(true)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                  >
+                    Start Navigation
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBottomSheetContent('route');
+                      setBottomSheetOpen(true);
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    View Directions
+                  </button>
+                </div>
+                <ShareButton
+                  route={{
+                    waypoints,
+                    profile: selectedProfile,
+                    distance: selectedRoute.distance,
+                    duration: selectedRoute.duration,
+                  }}
+                  className="w-full mt-2"
+                />
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Navigation Mode */}
+      {showNavigation && selectedRoute && (
+        <NavigationMode
+          route={selectedRoute}
+          onExit={() => setShowNavigation(false)}
+        />
+      )}
+
+      {/* Bottom Sheet for Directions */}
+      <BottomSheet
+        isOpen={bottomSheetOpen && bottomSheetContent === 'route'}
+        onClose={() => {
+          setBottomSheetOpen(false);
+          setBottomSheetContent(null);
+        }}
+        title="Directions"
+        maxHeight="80vh"
+      >
+        {selectedRoute && <DirectionsList route={selectedRoute} />}
+      </BottomSheet>
     </div>
   );
 };

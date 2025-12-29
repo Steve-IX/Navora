@@ -57,6 +57,10 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
 
     map.current.on('load', () => {
       setIsLoaded(true);
+      
+      // Enable 3D buildings
+      enable3DBuildings();
+      
       if (trafficEnabled) {
         addTrafficLayer();
       }
@@ -105,6 +109,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     if (map.current && isLoaded) {
       map.current.setStyle(getMapStyle(layer));
       map.current.once('style.load', () => {
+        enable3DBuildings();
         if (trafficEnabled) {
           addTrafficLayer();
         }
@@ -141,35 +146,163 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     }
   }, [center, zoom, bearing, pitch, isLoaded]);
 
-  // Update markers
+  // Update markers with clustering support
   useEffect(() => {
     if (!map.current || !isLoaded) return;
 
-    // Remove all existing markers
-    const existingMarkers = document.querySelectorAll('.mapboxgl-marker');
-    existingMarkers.forEach((marker) => marker.remove());
+    const sourceId = 'markers';
+    const clusterLayerId = 'clusters';
+    const clusterCountLayerId = 'cluster-count';
+    const unclusteredPointLayerId = 'unclustered-point';
 
-    // Add new markers
-    markers.forEach((marker) => {
-      const el = document.createElement('div');
-      el.className = 'custom-marker';
-      el.style.width = '32px';
-      el.style.height = '32px';
-      el.style.backgroundColor = marker.color || '#3b82f6';
-      el.style.borderRadius = '50%';
-      el.style.border = '2px solid white';
-      el.style.cursor = 'pointer';
-      el.title = marker.title || '';
+    // Convert markers to GeoJSON
+    const geojson: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: markers.map((marker) => ({
+        type: 'Feature',
+        properties: {
+          id: marker.id,
+          title: marker.title || '',
+          color: marker.color || '#3b82f6',
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [marker.coordinates.longitude, marker.coordinates.latitude],
+        },
+      })),
+    };
 
-      const popup = marker.title
-        ? new mapboxgl.Popup({ offset: 25 }).setText(marker.title)
-        : undefined;
+    // Remove existing source if it exists
+    if (map.current.getSource(sourceId)) {
+      if (map.current.getLayer(clusterLayerId)) map.current.removeLayer(clusterLayerId);
+      if (map.current.getLayer(clusterCountLayerId)) map.current.removeLayer(clusterCountLayerId);
+      if (map.current.getLayer(unclusteredPointLayerId)) map.current.removeLayer(unclusteredPointLayerId);
+      map.current.removeSource(sourceId);
+    }
 
-      new mapboxgl.Marker(el)
-        .setLngLat([marker.coordinates.longitude, marker.coordinates.latitude])
-        .setPopup(popup)
-        .addTo(map.current!);
+    // Add source with clustering enabled
+    map.current.addSource(sourceId, {
+      type: 'geojson',
+      data: geojson,
+      cluster: markers.length > 10, // Enable clustering if more than 10 markers
+      clusterMaxZoom: 14,
+      clusterRadius: 50,
     });
+
+    // Add cluster circles
+    map.current.addLayer({
+      id: clusterLayerId,
+      type: 'circle',
+      source: sourceId,
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': [
+          'step',
+          ['get', 'point_count'],
+          '#51bbd6',
+          100,
+          '#f1f075',
+          750,
+          '#f28cb1',
+        ],
+        'circle-radius': ['step', ['get', 'point_count'], 20, 100, 30, 750, 40],
+      },
+    });
+
+    // Add cluster count labels
+    map.current.addLayer({
+      id: clusterCountLayerId,
+      type: 'symbol',
+      source: sourceId,
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': '{point_count_abbreviated}',
+        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+        'text-size': 12,
+      },
+    });
+
+    // Add unclustered points
+    map.current.addLayer({
+      id: unclusteredPointLayerId,
+      type: 'circle',
+      source: sourceId,
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-color': ['get', 'color'],
+        'circle-radius': 8,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+      },
+    });
+
+    // Handle cluster clicks
+    const handleClusterClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const features = map.current!.queryRenderedFeatures(e.point, {
+        layers: [clusterLayerId],
+      });
+      const clusterId = features[0]?.properties?.cluster_id;
+      const source = map.current!.getSource(sourceId) as mapboxgl.GeoJSONSource;
+      
+      if (clusterId !== undefined && source.getClusterExpansionZoom) {
+        source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err || zoom === null || zoom === undefined) return;
+          map.current!.easeTo({
+            center: (e.lngLat as any) as [number, number],
+            zoom: zoom,
+          });
+        });
+      }
+    };
+
+    // Handle unclustered point clicks
+    const handlePointClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const features = map.current!.queryRenderedFeatures(e.point, {
+        layers: [unclusteredPointLayerId],
+      });
+      if (features.length > 0) {
+        const feature = features[0];
+        const title = feature.properties?.title;
+        if (title) {
+          new mapboxgl.Popup({ offset: 25 })
+            .setLngLat(e.lngLat)
+            .setHTML(`<strong>${title}</strong>`)
+            .addTo(map.current!);
+        }
+      }
+    };
+
+    // Change cursor on hover
+    const handleClusterEnter = () => {
+      map.current!.getCanvas().style.cursor = 'pointer';
+    };
+    const handleClusterLeave = () => {
+      map.current!.getCanvas().style.cursor = '';
+    };
+    const handlePointEnter = () => {
+      map.current!.getCanvas().style.cursor = 'pointer';
+    };
+    const handlePointLeave = () => {
+      map.current!.getCanvas().style.cursor = '';
+    };
+
+    map.current.on('click', clusterLayerId, handleClusterClick);
+    map.current.on('click', unclusteredPointLayerId, handlePointClick);
+    map.current.on('mouseenter', clusterLayerId, handleClusterEnter);
+    map.current.on('mouseleave', clusterLayerId, handleClusterLeave);
+    map.current.on('mouseenter', unclusteredPointLayerId, handlePointEnter);
+    map.current.on('mouseleave', unclusteredPointLayerId, handlePointLeave);
+
+    return () => {
+      if (map.current) {
+        map.current.off('click', clusterLayerId, handleClusterClick);
+        map.current.off('click', unclusteredPointLayerId, handlePointClick);
+        map.current.off('mouseenter', clusterLayerId, handleClusterEnter);
+        map.current.off('mouseleave', clusterLayerId, handleClusterLeave);
+        map.current.off('mouseenter', unclusteredPointLayerId, handlePointEnter);
+        map.current.off('mouseleave', unclusteredPointLayerId, handlePointLeave);
+      }
+    };
   }, [markers, isLoaded]);
 
   // Update routes
@@ -279,6 +412,49 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     }
   };
 
+  const enable3DBuildings = () => {
+    if (!map.current) return;
+
+    // Remove existing 3D buildings layer if it exists
+    if (map.current.getLayer('3d-buildings')) {
+      map.current.removeLayer('3d-buildings');
+    }
+
+    // Add 3D buildings layer (only on standard/satellite styles, not terrain)
+    if ((layer === 'standard' || layer === 'satellite') && map.current.getSource('composite')) {
+      map.current.addLayer({
+        id: '3d-buildings',
+        source: 'composite',
+        'source-layer': 'building',
+        filter: ['==', ['get', 'extrude'], 'true'],
+        type: 'fill-extrusion',
+        minzoom: 15,
+        paint: {
+          'fill-extrusion-color': '#aaa',
+          'fill-extrusion-height': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            0,
+            15.05,
+            ['get', 'height'],
+          ],
+          'fill-extrusion-base': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            0,
+            15.05,
+            ['get', 'min_height'],
+          ],
+          'fill-extrusion-opacity': 0.6,
+        },
+      });
+    }
+  };
+
   return (
     <div className="relative w-full h-full">
       <div ref={mapContainer} className="w-full h-full" />
@@ -286,4 +462,3 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, children }) => {
     </div>
   );
 };
-

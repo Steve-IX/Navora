@@ -4,9 +4,16 @@ import { LayerControl } from './components/map/LayerControl';
 import { SearchBar } from './components/search/SearchBar';
 import { RoutePlanner } from './components/routing/RoutePlanner';
 import { GPSIndicator } from './components/location/GPSIndicator';
+import { SidePanel } from './components/layout/SidePanel';
+import { PlaceSearch, PlaceDetails, NearbyPlaces } from './components/places';
+import { MeasurementTool } from './components/tools';
 import { useMapStore } from './stores/mapStore';
+import { usePlacesStore } from './stores/placesStore';
+import { useUIStore } from './stores/uiStore';
 import { authService } from './services/api/auth.service';
 import { locationService } from './services/locationService';
+import { shareService } from './services/share.service';
+import { useRouteStore } from './stores/routeStore';
 import { Coordinates } from '@shared/types/geocoding';
 
 // Check if running in demo mode (frontend-only, no backend)
@@ -15,6 +22,10 @@ const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.e
 function App() {
   const [isReady, setIsReady] = useState(false);
   const { addMarker, setCenter, setZoom } = useMapStore();
+  const { selectedPlace } = usePlacesStore();
+  const { sidePanelOpen, sidePanelContent, setSidePanelOpen, setSidePanelContent } = useUIStore();
+  const { addWaypoint, setProfile } = useRouteStore();
+  const [showMeasurementTool, setShowMeasurementTool] = useState(false);
 
   const initializeLocation = async () => {
     try {
@@ -27,11 +38,40 @@ function App() {
     }
   };
 
+  const handleSharedContent = () => {
+    // Check for shared location
+    const sharedLocation = shareService.parseLocationUrl();
+    if (sharedLocation) {
+      setCenter(sharedLocation.coordinates);
+      setZoom(14);
+      addMarker({
+        id: 'shared-location',
+        coordinates: sharedLocation.coordinates,
+        title: sharedLocation.name || 'Shared Location',
+        color: '#3b82f6',
+      });
+      return;
+    }
+
+    // Check for shared route
+    const sharedRoute = shareService.parseRouteUrl();
+    if (sharedRoute) {
+      sharedRoute.waypoints.forEach(wp => addWaypoint(wp));
+      setProfile(sharedRoute.profile as any);
+      // Center on first waypoint
+      if (sharedRoute.waypoints.length > 0) {
+        setCenter(sharedRoute.waypoints[0].coordinates);
+        setZoom(12);
+      }
+    }
+  };
+
   useEffect(() => {
     // In demo mode, skip authentication
     if (IS_DEMO_MODE) {
       setIsReady(true);
       initializeLocation();
+      handleSharedContent();
       return;
     }
 
@@ -43,16 +83,19 @@ function App() {
         .then(() => {
           setIsReady(true);
           initializeLocation();
+          handleSharedContent();
         })
         .catch((error) => {
           console.error('Failed to create guest token:', error);
           // Still allow app to work if auth fails
           setIsReady(true);
           initializeLocation();
+          handleSharedContent();
         });
     } else {
       setIsReady(true);
       initializeLocation();
+      handleSharedContent();
     }
   }, [setCenter, setZoom]);
 
@@ -85,7 +128,63 @@ function App() {
         <SearchBar />
         <RoutePlanner />
         <GPSIndicator />
+        
+        {/* Floating Action Buttons */}
+        <div className="absolute bottom-20 left-4 z-20 flex flex-col gap-2">
+          <button
+            onClick={() => {
+              setSidePanelContent('places');
+            }}
+            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Search places"
+          >
+            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setShowMeasurementTool(!showMeasurementTool)}
+            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Measurement tool"
+          >
+            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+            </svg>
+          </button>
+        </div>
+
+        {showMeasurementTool && (
+          <MeasurementTool onClose={() => setShowMeasurementTool(false)} />
+        )}
       </MapView>
+
+      {/* Side Panel */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'places'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        title={selectedPlace ? 'Place Details' : 'Places'}
+        width="md"
+      >
+        {selectedPlace ? (
+          <PlaceDetails
+            place={selectedPlace}
+            onClose={() => {
+              usePlacesStore.getState().setSelectedPlace(null);
+            }}
+          />
+        ) : (
+          <div className="p-4 space-y-4">
+            <PlaceSearch />
+            <div className="border-t border-gray-200 pt-4">
+              <NearbyPlaces />
+            </div>
+          </div>
+        )}
+      </SidePanel>
     </div>
   );
 }

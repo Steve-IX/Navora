@@ -9,6 +9,7 @@ import { RoutingModule } from './routing/routing.module';
 import { LocationsModule } from './locations/locations.module';
 import { RoutesModule } from './routes/routes.module';
 import { WebsocketModule } from './websocket/websocket.module';
+import { PlacesModule } from './places/places.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 
@@ -37,6 +38,7 @@ import { AppController } from './app.controller';
     LocationsModule,
     RoutesModule,
     WebsocketModule,
+    PlacesModule,
   ],
 })
 export class AppModule {}
