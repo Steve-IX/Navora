@@ -190,6 +190,23 @@ export const RoutePlanner: React.FC = () => {
       return;
     }
 
+    // Validate waypoints have valid coordinates
+    for (let i = 0; i < waypoints.length; i++) {
+      const wp = waypoints[i];
+      if (!wp.coordinates) {
+        setError(`Waypoint ${i + 1} is missing coordinates`);
+        return;
+      }
+      if (typeof wp.coordinates.latitude !== 'number' || typeof wp.coordinates.longitude !== 'number') {
+        setError(`Waypoint ${i + 1} has invalid coordinates`);
+        return;
+      }
+      if (isNaN(wp.coordinates.latitude) || isNaN(wp.coordinates.longitude)) {
+        setError(`Waypoint ${i + 1} has invalid coordinates`);
+        return;
+      }
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -218,7 +235,14 @@ export const RoutePlanner: React.FC = () => {
         setSelectedRoute(response.routes[0]);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to calculate route');
+      // Extract error message from various possible error formats
+      const errorMessage = 
+        err.response?.data?.message || 
+        err.response?.data?.error || 
+        err.message || 
+        'Failed to calculate route';
+      setError(errorMessage);
+      console.error('Route calculation error:', err);
     } finally {
       setIsLoading(false);
     }

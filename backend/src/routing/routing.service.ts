@@ -50,6 +50,42 @@ export class RoutingService {
         );
       }
 
+      // Validate waypoint coordinates
+      for (let i = 0; i < waypoints.length; i++) {
+        const wp = waypoints[i];
+        if (!wp.coordinates) {
+          throw new HttpException(
+            `Waypoint ${i + 1} is missing coordinates`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        if (typeof wp.coordinates.latitude !== 'number' || typeof wp.coordinates.longitude !== 'number') {
+          throw new HttpException(
+            `Waypoint ${i + 1} has invalid coordinates`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        if (isNaN(wp.coordinates.latitude) || isNaN(wp.coordinates.longitude)) {
+          throw new HttpException(
+            `Waypoint ${i + 1} has NaN coordinates`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        // Validate coordinate ranges
+        if (wp.coordinates.latitude < -90 || wp.coordinates.latitude > 90) {
+          throw new HttpException(
+            `Waypoint ${i + 1} has invalid latitude (must be between -90 and 90)`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        if (wp.coordinates.longitude < -180 || wp.coordinates.longitude > 180) {
+          throw new HttpException(
+            `Waypoint ${i + 1} has invalid longitude (must be between -180 and 180)`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
       // Handle flight routing separately (great-circle distance)
       if (profile === 'flight') {
         return this.calculateFlightRoute(waypoints);
@@ -213,13 +249,24 @@ export class RoutingService {
     const transfers: any[] = [];
 
     try {
+      // Validate coordinates first
+      if (!origin.coordinates || !destination.coordinates) {
+        throw new HttpException(
+          'Origin or destination coordinates are missing',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       // Validate origin and destination are different
       const originDestDistance = this.calculateGreatCircleDistance(
         origin.coordinates,
         destination.coordinates,
       );
-      if (originDestDistance < 1000) {
-        // Less than 1km - likely same location
+      
+      // Only validate distance for very close locations (less than 100m)
+      // This prevents false positives for nearby addresses that are still valid flight routes
+      if (originDestDistance < 100) {
+        // Less than 100m - likely same location or invalid
         throw new HttpException(
           'Origin and destination are too close for flight routing. Please select different locations.',
           HttpStatus.BAD_REQUEST,
