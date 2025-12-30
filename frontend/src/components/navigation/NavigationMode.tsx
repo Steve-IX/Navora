@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Route } from '@shared/types/routing';
 import { DirectionsList } from './DirectionsList';
 import { useMapStore } from '@/stores/mapStore';
@@ -35,11 +35,13 @@ function calculateDistance(
 export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit }) => {
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [distanceToNextTurn, setDistanceToNextTurn] = useState<number | null>(null);
+  const [isManuallyNavigating, setIsManuallyNavigating] = useState(false);
   const { setCenter, setZoom } = useMapStore();
-  const { currentLocation, isTracking, setCurrentLocation, setIsTracking } = useLocationStore();
+  const { currentLocation, isTracking, setCurrentLocation, setIsTracking, setError: setLocationError } = useLocationStore();
   const { currentStepIndex, setCurrentStepIndex } = useRouteStore();
   const locationWatchId = useRef<number | null>(null);
   const stepCheckInterval = useRef<NodeJS.Timeout | null>(null);
+  const manualNavigationTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Check if this is a flight route first
   const isFlightRoute = route.flightInfo !== undefined;
@@ -52,7 +54,7 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
     : 0;
 
   // Get all steps in a flat array - safely handle missing data
-  const getAllSteps = () => {
+  const getAllSteps = useCallback(() => {
     const allSteps: Array<{ step: any; legIndex: number; globalIndex: number }> = [];
     if (!route.legs || !Array.isArray(route.legs)) {
       return allSteps;
@@ -66,51 +68,102 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
       }
     });
     return allSteps;
-  };
+  }, [route.legs]);
 
   const allSteps = getAllSteps();
   const currentStep = allSteps[currentStepIndex] || null;
   const nextStep = currentStepIndex < allSteps.length - 1 ? allSteps[currentStepIndex + 1] : null;
 
+  // Safe map centering function - wrapped in useCallback to prevent re-renders
+  const centerOnLocation = useCallback((location: Coordinates, zoom: number = 16) => {
+    // Use requestAnimationFrame to ensure we're not updating during render
+    requestAnimationFrame(() => {
+      try {
+        setCenter(location);
+        setZoom(zoom);
+      } catch (error) {
+        console.error('Error centering map:', error);
+      }
+    });
+  }, [setCenter, setZoom]);
+
   // Center map on current step when step index changes (for Next/Previous navigation)
   useEffect(() => {
-    if (currentStep?.step?.maneuver?.location) {
-      setCenter(currentStep.step.maneuver.location);
-      setZoom(16); // Good zoom level for viewing step location
+    if (currentStep?.step?.maneuver?.location && isManuallyNavigating) {
+      setIsManuallyNavigating(true);
+      centerOnLocation(currentStep.step.maneuver.location, 16);
+      
+      // Reset manual navigation flag after 3 seconds to allow auto-tracking to resume
+      if (manualNavigationTimeout.current) {
+        clearTimeout(manualNavigationTimeout.current);
+      }
+      manualNavigationTimeout.current = setTimeout(() => {
+        setIsManuallyNavigating(false);
+      }, 3000);
     }
-  }, [currentStepIndex, currentStep, setCenter, setZoom]);
+  }, [currentStepIndex, currentStep, centerOnLocation, isManuallyNavigating]);
 
   // Start location tracking when navigation begins
   useEffect(() => {
-    if (!isTracking && navigator.geolocation) {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    if (!isTracking) {
       setIsTracking(true);
-      locationWatchId.current = navigator.geolocation.watchPosition(
-        (position) => {
-          const newLocation: Coordinates = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          };
-          setCurrentLocation(newLocation);
-          setCenter(newLocation);
-          setZoom(17); // Close zoom for navigation
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 5000,
-        }
-      );
+      try {
+        locationWatchId.current = navigator.geolocation.watchPosition(
+          (position) => {
+            const newLocation: Coordinates = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            };
+            setCurrentLocation(newLocation);
+            
+            // Only auto-center if not manually navigating
+            if (!isManuallyNavigating) {
+              centerOnLocation(newLocation, 17);
+            }
+          },
+          (error) => {
+            console.error('Geolocation error:', error);
+            let errorMessage = 'Unable to get your location';
+            switch (error.code) {
+              case error.PERMISSION_DENIED:
+                errorMessage = 'Location permission denied. Please enable location access.';
+                break;
+              case error.POSITION_UNAVAILABLE:
+                errorMessage = 'Location information unavailable.';
+                break;
+              case error.TIMEOUT:
+                errorMessage = 'Location request timed out.';
+                break;
+            }
+            setLocationError(errorMessage);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 10000, // Increased timeout for better reliability
+          }
+        );
+      } catch (error) {
+        console.error('Error setting up geolocation:', error);
+        setLocationError('Failed to start location tracking');
+      }
     }
 
     return () => {
       if (locationWatchId.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(locationWatchId.current);
+        locationWatchId.current = null;
+      }
+      if (manualNavigationTimeout.current) {
+        clearTimeout(manualNavigationTimeout.current);
       }
     };
-  }, [isTracking, setCurrentLocation, setCenter, setZoom, setIsTracking]);
+  }, [isTracking, setCurrentLocation, setIsTracking, setLocationError, centerOnLocation, isManuallyNavigating]);
 
   // Calculate distance to next turn and auto-advance steps
   useEffect(() => {
@@ -146,29 +199,15 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
     };
   }, [currentLocation, currentStep, currentStepIndex, totalSteps, setCurrentStepIndex]);
 
-  // Center map on user location when it updates (only if we have a current location and not manually navigating steps)
-  useEffect(() => {
-    // Only auto-center on user location if we're actively tracking and not manually viewing a step
-    // This prevents conflicts when user clicks Next/Previous
-    if (currentLocation && isTracking) {
-      // Small delay to allow step-based centering to take precedence
-      const timer = setTimeout(() => {
-        setCenter(currentLocation);
-        setZoom(17);
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [currentLocation, isTracking, setCenter, setZoom]);
-
   const handleNextStep = () => {
     if (currentStepIndex < totalSteps - 1) {
       const nextIndex = currentStepIndex + 1;
+      setIsManuallyNavigating(true);
       setCurrentStepIndex(nextIndex);
       // Center map on next step's location
       const nextStepData = allSteps[nextIndex];
       if (nextStepData?.step?.maneuver?.location) {
-        setCenter(nextStepData.step.maneuver.location);
-        setZoom(16);
+        centerOnLocation(nextStepData.step.maneuver.location, 16);
       }
     }
   };
@@ -176,12 +215,12 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
   const handlePreviousStep = () => {
     if (currentStepIndex > 0) {
       const prevIndex = currentStepIndex - 1;
+      setIsManuallyNavigating(true);
       setCurrentStepIndex(prevIndex);
       // Center map on previous step's location
       const prevStepData = allSteps[prevIndex];
       if (prevStepData?.step?.maneuver?.location) {
-        setCenter(prevStepData.step.maneuver.location);
-        setZoom(16);
+        centerOnLocation(prevStepData.step.maneuver.location, 16);
       }
     }
   };
@@ -239,25 +278,25 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
 
   return (
     <>
-      {/* Top Navigation Bar - Fixed at top, Google Maps style */}
+      {/* Top Navigation Bar - Fixed at top, mobile responsive */}
       <div className="fixed top-0 left-0 right-0 z-50 pointer-events-auto">
         <div className="bg-gradient-to-b from-blue-600 to-blue-700 text-white shadow-lg">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-blue-500/30">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-lg">
+          <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-blue-500/30">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-white/20 rounded-full flex items-center justify-center text-base sm:text-lg flex-shrink-0">
                 🧭
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs opacity-80">Navigating</div>
-                <div className="text-sm font-medium">
+                <div className="text-xs sm:text-sm font-medium truncate">
                   {formatDistance(remainingDistance)} · {formatDuration(remainingDuration)}
                 </div>
               </div>
             </div>
             <button
               onClick={onExit}
-              className="p-2 hover:bg-white/10 rounded-full transition-colors"
+              className="p-2 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
               aria-label="Exit navigation"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -266,24 +305,24 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
             </button>
           </div>
 
-          {/* Current Instruction - Prominent display */}
+          {/* Current Instruction - Prominent display, mobile optimized */}
           {currentStep && (
-            <div className="px-4 py-4 bg-blue-700/50">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-white text-blue-600 rounded-2xl flex items-center justify-center text-3xl font-bold shadow-xl flex-shrink-0">
+            <div className="px-3 sm:px-4 py-3 sm:py-4 bg-blue-700/50">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center text-2xl sm:text-3xl font-bold shadow-xl flex-shrink-0">
                   {getManeuverIcon(currentStep.step.maneuver.type)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xl font-bold mb-1 truncate">
+                  <div className="text-base sm:text-xl font-bold mb-1 truncate">
                     {currentStep.step.instruction}
                   </div>
                   {distanceToNextTurn !== null && (
-                    <div className="text-lg font-semibold opacity-90">
+                    <div className="text-sm sm:text-lg font-semibold opacity-90">
                       {formatDistance(distanceToNextTurn)}
                     </div>
                   )}
                   {nextStep && (
-                    <div className="text-sm opacity-75 mt-1">
+                    <div className="text-xs sm:text-sm opacity-75 mt-1 truncate">
                       Then: {nextStep.step.instruction}
                     </div>
                   )}
@@ -292,32 +331,32 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
             </div>
           )}
 
-          {/* Step Progress Indicator */}
-          <div className="flex items-center justify-between px-4 py-2 bg-blue-800/30">
+          {/* Step Progress Indicator - Mobile responsive */}
+          <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-blue-800/30">
             <button
               onClick={handlePreviousStep}
               disabled={currentStepIndex === 0}
-              className="px-3 py-1.5 text-sm bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              ← Previous
+              ← <span className="hidden sm:inline">Previous</span>
             </button>
-            <div className="text-sm font-medium">
+            <div className="text-xs sm:text-sm font-medium">
               Step {currentStepIndex + 1} of {totalSteps}
             </div>
             <button
               onClick={handleNextStep}
               disabled={currentStepIndex >= totalSteps - 1}
-              className="px-3 py-1.5 text-sm bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              Next →
+              <span className="hidden sm:inline">Next </span>→
             </button>
           </div>
         </div>
       </div>
 
-      {/* Bottom Steps Panel - Collapsible */}
+      {/* Bottom Steps Panel - Collapsible, mobile responsive */}
       <div className="fixed bottom-0 left-0 right-0 z-50 pointer-events-auto">
-        <div className="bg-white rounded-t-2xl shadow-2xl border-t border-gray-200 max-h-[40vh] overflow-hidden flex flex-col">
+        <div className="bg-white rounded-t-2xl shadow-2xl border-t border-gray-200 max-h-[40vh] sm:max-h-[50vh] overflow-hidden flex flex-col">
           {/* Toggle Header */}
           <button
             onClick={() => setShowAllSteps(!showAllSteps)}
@@ -342,7 +381,14 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
               <DirectionsList
                 route={route}
                 selectedStepIndex={currentStepIndex}
-                onStepSelect={setCurrentStepIndex}
+                onStepSelect={(index) => {
+                  setIsManuallyNavigating(true);
+                  setCurrentStepIndex(index);
+                  const stepData = allSteps[index];
+                  if (stepData?.step?.maneuver?.location) {
+                    centerOnLocation(stepData.step.maneuver.location, 16);
+                  }
+                }}
                 compact
               />
             </div>
@@ -366,17 +412,26 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
 // Separate Flight Navigation Component
 const FlightNavigationMode: React.FC<{ route: Route; onExit: () => void }> = ({ route, onExit }) => {
   const { setCenter, setZoom } = useMapStore();
-  const flightInfo = route.flightInfo!;
+
+  const centerOnLocation = useCallback((location: Coordinates, zoom: number = 4) => {
+    requestAnimationFrame(() => {
+      try {
+        setCenter(location);
+        setZoom(zoom);
+      } catch (error) {
+        console.error('Error centering map:', error);
+      }
+    });
+  }, [setCenter, setZoom]);
 
   useEffect(() => {
     // Center map to show the entire flight path
     if (route.geometry.coordinates.length >= 2) {
       const coords = route.geometry.coordinates;
       const midIndex = Math.floor(coords.length / 2);
-      setCenter(coords[midIndex]);
-      setZoom(4); // Zoom out for flight view
+      centerOnLocation(coords[midIndex], 4);
     }
-  }, []);
+  }, [route.geometry.coordinates, centerOnLocation]);
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -391,26 +446,26 @@ const FlightNavigationMode: React.FC<{ route: Route; onExit: () => void }> = ({ 
 
   return (
     <>
-      {/* Flight Info Card - Top */}
+      {/* Flight Info Card - Top, mobile responsive */}
       <div className="fixed top-4 left-4 right-4 z-50 pointer-events-auto max-w-lg mx-auto">
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header */}
           <div className="bg-gradient-to-r from-sky-500 to-blue-600 text-white px-4 py-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">✈️</span>
-                <div>
-                  <div className="font-bold text-lg">
-                    {flightInfo.airline} {flightInfo.flightNumber || ''}
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <span className="text-2xl sm:text-3xl flex-shrink-0">✈️</span>
+                <div className="min-w-0">
+                  <div className="font-bold text-base sm:text-lg truncate">
+                    {route.flightInfo!.airline} {route.flightInfo!.flightNumber || ''}
                   </div>
-                  <div className="text-sm opacity-90">
+                  <div className="text-xs sm:text-sm opacity-90">
                     {formatDistance(route.distance)} · {formatDuration(route.duration)}
                   </div>
                 </div>
               </div>
               <button
                 onClick={onExit}
-                className="p-2 hover:bg-white/20 rounded-full transition-colors"
+                className="p-2 hover:bg-white/20 rounded-full transition-colors flex-shrink-0"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -421,18 +476,18 @@ const FlightNavigationMode: React.FC<{ route: Route; onExit: () => void }> = ({ 
 
           {/* Flight Route */}
           <div className="p-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               {/* Departure */}
-              <div className="flex-1 text-center">
-                <div className="text-3xl font-bold text-gray-900">
-                  {flightInfo.departureIata || '---'}
+              <div className="flex-1 text-center min-w-0">
+                <div className="text-2xl sm:text-3xl font-bold text-gray-900">
+                  {route.flightInfo!.departureIata || '---'}
                 </div>
-                <div className="text-sm text-gray-600 truncate">
-                  {flightInfo.departureAirport || 'Departure'}
+                <div className="text-xs sm:text-sm text-gray-600 truncate">
+                  {route.flightInfo!.departureAirport || 'Departure'}
                 </div>
-                {flightInfo.scheduledDeparture && (
+                {route.flightInfo!.scheduledDeparture && (
                   <div className="text-xs text-gray-500 mt-1">
-                    {new Date(flightInfo.scheduledDeparture).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(route.flightInfo!.scheduledDeparture).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 )}
               </div>
@@ -440,46 +495,46 @@ const FlightNavigationMode: React.FC<{ route: Route; onExit: () => void }> = ({ 
               {/* Flight Path Visual */}
               <div className="flex-shrink-0 flex items-center gap-1">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
-                <div className="w-16 h-0.5 bg-gradient-to-r from-green-500 via-blue-500 to-red-500 relative">
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg">✈️</span>
+                <div className="w-12 sm:w-16 h-0.5 bg-gradient-to-r from-green-500 via-blue-500 to-red-500 relative">
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-base sm:text-lg">✈️</span>
                 </div>
                 <div className="w-2 h-2 bg-red-500 rounded-full" />
               </div>
 
               {/* Arrival */}
-              <div className="flex-1 text-center">
-                <div className="text-3xl font-bold text-gray-900">
-                  {flightInfo.arrivalIata || '---'}
+              <div className="flex-1 text-center min-w-0">
+                <div className="text-2xl sm:text-3xl font-bold text-gray-900">
+                  {route.flightInfo!.arrivalIata || '---'}
                 </div>
-                <div className="text-sm text-gray-600 truncate">
-                  {flightInfo.arrivalAirport || 'Arrival'}
+                <div className="text-xs sm:text-sm text-gray-600 truncate">
+                  {route.flightInfo!.arrivalAirport || 'Arrival'}
                 </div>
-                {flightInfo.scheduledArrival && (
+                {route.flightInfo!.scheduledArrival && (
                   <div className="text-xs text-gray-500 mt-1">
-                    {new Date(flightInfo.scheduledArrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(route.flightInfo!.scheduledArrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 )}
               </div>
             </div>
 
             {/* Status Badge */}
-            {flightInfo.flightStatus && (
+            {route.flightInfo!.flightStatus && (
               <div className="mt-4 flex justify-center">
-                <span className={`px-4 py-1.5 rounded-full text-sm font-medium ${
-                  flightInfo.flightStatus === 'active' ? 'bg-green-100 text-green-700' :
-                  flightInfo.flightStatus === 'scheduled' ? 'bg-blue-100 text-blue-700' :
-                  flightInfo.flightStatus === 'landed' ? 'bg-gray-100 text-gray-700' :
+                <span className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium ${
+                  route.flightInfo!.flightStatus === 'active' ? 'bg-green-100 text-green-700' :
+                  route.flightInfo!.flightStatus === 'scheduled' ? 'bg-blue-100 text-blue-700' :
+                  route.flightInfo!.flightStatus === 'landed' ? 'bg-gray-100 text-gray-700' :
                   'bg-orange-100 text-orange-700'
                 }`}>
-                  {flightInfo.flightStatus.charAt(0).toUpperCase() + flightInfo.flightStatus.slice(1)}
+                  {route.flightInfo!.flightStatus.charAt(0).toUpperCase() + route.flightInfo!.flightStatus.slice(1)}
                 </span>
               </div>
             )}
 
             {/* Additional Info */}
-            {flightInfo.aircraft && (
-              <div className="mt-3 text-center text-sm text-gray-500">
-                Aircraft: {flightInfo.aircraft}
+            {route.flightInfo!.aircraft && (
+              <div className="mt-3 text-center text-xs sm:text-sm text-gray-500">
+                Aircraft: {route.flightInfo!.aircraft}
               </div>
             )}
           </div>
@@ -488,7 +543,7 @@ const FlightNavigationMode: React.FC<{ route: Route; onExit: () => void }> = ({ 
           <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex justify-center">
             <button
               onClick={onExit}
-              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition-colors"
+              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-gray-300 transition-colors"
             >
               Close Flight Info
             </button>
@@ -496,12 +551,12 @@ const FlightNavigationMode: React.FC<{ route: Route; onExit: () => void }> = ({ 
         </div>
       </div>
 
-      {/* Flight Tips - Bottom */}
+      {/* Flight Tips - Bottom, mobile responsive */}
       <div className="fixed bottom-4 left-4 right-4 z-50 pointer-events-auto max-w-lg mx-auto">
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-xl">💡</span>
-            <div className="text-sm text-amber-800">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4">
+          <div className="flex items-start gap-2 sm:gap-3">
+            <span className="text-lg sm:text-xl flex-shrink-0">💡</span>
+            <div className="text-xs sm:text-sm text-amber-800">
               <strong>Flight Route Info:</strong> This shows the direct flight path between airports. 
               For real-time flight tracking and booking, please use your airline's app or website.
             </div>
