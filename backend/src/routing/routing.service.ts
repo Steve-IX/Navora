@@ -213,6 +213,19 @@ export class RoutingService {
     const transfers: any[] = [];
 
     try {
+      // Validate origin and destination are different
+      const originDestDistance = this.calculateGreatCircleDistance(
+        origin.coordinates,
+        destination.coordinates,
+      );
+      if (originDestDistance < 1000) {
+        // Less than 1km - likely same location
+        throw new HttpException(
+          'Origin and destination are too close for flight routing. Please select different locations.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       // Step 1: Find nearest departure airport
       const departureAirport = await this.findNearestAirport(origin.coordinates);
       if (!departureAirport) {
@@ -220,22 +233,54 @@ export class RoutingService {
       }
 
       // Step 2: Calculate ground transport from origin to departure airport
-      const toAirportTransport = await this.calculateGroundTransport(
-        origin.coordinates,
-        { longitude: departureAirport.lng, latitude: departureAirport.lat },
-        'driving', // Default to driving, could be made configurable
-      );
+      // Try multiple transport modes and select the best option
+      const transportModes: Array<'driving' | 'transit' | 'walking'> = ['driving', 'transit', 'walking'];
+      let toAirportTransport: any = null;
+      let bestTransportMode: 'driving' | 'transit' | 'walking' = 'driving';
+      
+      // Try driving first (most common), then transit, then walking
+      for (const mode of transportModes) {
+        try {
+          const transport = await this.calculateGroundTransport(
+            origin.coordinates,
+            { longitude: departureAirport.lng, latitude: departureAirport.lat },
+            mode,
+          );
+          if (transport && (!toAirportTransport || transport.duration < toAirportTransport.duration)) {
+            toAirportTransport = transport;
+            bestTransportMode = mode;
+          }
+        } catch (error) {
+          // Continue to next mode
+          continue;
+        }
+      }
+      
+      // If no transport found, use driving as fallback
+      if (!toAirportTransport) {
+        toAirportTransport = await this.calculateGroundTransport(
+          origin.coordinates,
+          { longitude: departureAirport.lng, latitude: departureAirport.lat },
+          'driving',
+        );
+        bestTransportMode = 'driving';
+      }
 
       if (toAirportTransport) {
+        const modeLabels: Record<string, string> = {
+          driving: 'Drive',
+          transit: 'Take transit',
+          walking: 'Walk',
+        };
         legs.push({
           distance: toAirportTransport.distance,
           duration: toAirportTransport.duration,
           steps: toAirportTransport.steps.map((step: any) => ({
             ...step,
-            transportMode: 'driving',
+            transportMode: bestTransportMode,
           })),
-          transportMode: 'driving',
-          modeLabel: `Drive to ${departureAirport.name} (${departureAirport.iata})`,
+          transportMode: bestTransportMode,
+          modeLabel: `${modeLabels[bestTransportMode] || 'Travel'} to ${departureAirport.name} (${departureAirport.iata})`,
         });
         totalDistance += toAirportTransport.distance;
         totalDuration += toAirportTransport.duration;
@@ -248,8 +293,41 @@ export class RoutingService {
         throw new Error('Could not find arrival airport');
       }
 
+      // Validate: Prevent same origin and destination airports
+      if (departureAirport.iata === arrivalAirportCandidate.iata) {
+        throw new HttpException(
+          `Invalid route: Departure and arrival airports are the same (${departureAirport.iata}). Please select different origin and destination locations.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       // Step 4: Find optimal flight route (direct or connecting)
       const flightRoute = await this.findOptimalFlightRoute(departureAirport, arrivalAirportCandidate);
+      
+      // Validate flight route segments
+      if (flightRoute.segments.length === 0) {
+        throw new HttpException(
+          'No flight route found between selected airports. Please try different origin and destination locations.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Validate: Check for circular flights (same airport appears multiple times)
+      const airportSequence: string[] = [];
+      flightRoute.segments.forEach(segment => {
+        airportSequence.push(segment.departureIata);
+        airportSequence.push(segment.arrivalIata);
+      });
+      
+      // Check for immediate circular routes (A -> A)
+      for (let i = 0; i < airportSequence.length - 1; i++) {
+        if (airportSequence[i] === airportSequence[i + 1]) {
+          throw new HttpException(
+            `Invalid route: Circular flight detected (${airportSequence[i]} → ${airportSequence[i + 1]}). Please select different locations.`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
 
       // Step 5: Add flight segments as legs
       for (let i = 0; i < flightRoute.segments.length; i++) {
@@ -341,22 +419,52 @@ export class RoutingService {
       }
 
       // Step 6: Calculate ground transport from arrival airport to destination
-      const fromAirportTransport = await this.calculateGroundTransport(
-        { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat },
-        destination.coordinates,
-        'driving',
-      );
+      // Try multiple transport modes and select the best option
+      let fromAirportTransport: any = null;
+      let bestArrivalTransportMode: 'driving' | 'transit' | 'walking' = 'driving';
+      
+      for (const mode of transportModes) {
+        try {
+          const transport = await this.calculateGroundTransport(
+            { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat },
+            destination.coordinates,
+            mode,
+          );
+          if (transport && (!fromAirportTransport || transport.duration < fromAirportTransport.duration)) {
+            fromAirportTransport = transport;
+            bestArrivalTransportMode = mode;
+          }
+        } catch (error) {
+          // Continue to next mode
+          continue;
+        }
+      }
+      
+      // If no transport found, use driving as fallback
+      if (!fromAirportTransport) {
+        fromAirportTransport = await this.calculateGroundTransport(
+          { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat },
+          destination.coordinates,
+          'driving',
+        );
+        bestArrivalTransportMode = 'driving';
+      }
 
       if (fromAirportTransport) {
+        const modeLabels: Record<string, string> = {
+          driving: 'Drive',
+          transit: 'Take transit',
+          walking: 'Walk',
+        };
         legs.push({
           distance: fromAirportTransport.distance,
           duration: fromAirportTransport.duration,
           steps: fromAirportTransport.steps.map((step: any) => ({
             ...step,
-            transportMode: 'driving',
+            transportMode: bestArrivalTransportMode,
           })),
-          transportMode: 'driving',
-          modeLabel: `Drive from ${arrivalAirportCandidate.name} (${arrivalAirportCandidate.iata}) to destination`,
+          transportMode: bestArrivalTransportMode,
+          modeLabel: `${modeLabels[bestArrivalTransportMode] || 'Travel'} from ${arrivalAirportCandidate.name} (${arrivalAirportCandidate.iata}) to destination`,
         });
         totalDistance += fromAirportTransport.distance;
         totalDuration += fromAirportTransport.duration;
@@ -411,7 +519,11 @@ export class RoutingService {
       };
     } catch (error) {
       console.error('Error building multimodal flight journey:', error);
-      // Fallback to simple great-circle route
+      // If it's a validation error, throw it instead of falling back
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      // For other errors, fallback to simple great-circle route
       return this.calculateFlightRouteFallback([origin, destination]);
     }
   }
@@ -448,16 +560,16 @@ export class RoutingService {
         coordinates: routeCoordinates,
       },
       legs: [{
-        distance: totalDistance,
+          distance: totalDistance,
         duration: flightDuration,
         steps: [{
-          distance: totalDistance,
+              distance: totalDistance,
           duration: flightDuration,
           instruction: 'Fly direct to destination (estimated)',
-          maneuver: {
-            type: 'depart',
-            location: waypoints[0].coordinates,
-          },
+              maneuver: {
+                type: 'depart',
+                location: waypoints[0].coordinates,
+              },
           transportMode: 'flight',
         }],
         transportMode: 'flight',
@@ -884,10 +996,10 @@ export class RoutingService {
         const url = `${this.aviationStackApiUrl}/airports?access_key=${this.aviationStackApiKey}&limit=${limit}&offset=${offset}`;
         
         try {
-          const response = await firstValueFrom(this.httpService.get(url));
-          const data = response.data;
+      const response = await firstValueFrom(this.httpService.get(url));
+      const data = response.data;
 
-          if (data.error || !data.data || data.data.length === 0) {
+      if (data.error || !data.data || data.data.length === 0) {
             break;
           }
 
@@ -959,7 +1071,7 @@ export class RoutingService {
 
       // Cache the result
       this.airportCache.set(cacheKey, { airport: nearestAirport, expires: Date.now() + this.airportCacheTTL });
-      
+
       return nearestAirport;
     } catch (error) {
       console.error('Error finding nearest airport:', error);

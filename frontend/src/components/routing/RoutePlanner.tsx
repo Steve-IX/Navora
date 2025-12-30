@@ -79,19 +79,27 @@ export const RoutePlanner: React.FC = () => {
     };
   }, [waypoints]);
 
-  // Auto-fill "from" with current location when it becomes available
+  // Track if user has manually set an origin (not GPS)
+  const userSetOriginRef = useRef(false);
+
+  // Auto-fill "from" with current location ONLY if no manual origin is set
   useEffect(() => {
     if (!currentLocation) return;
 
-    if (waypoints.length === 0) {
+    // Only auto-fill if:
+    // 1. No waypoints exist AND user hasn't manually set an origin, OR
+    // 2. First waypoint is explicitly "Current Location" (user wants GPS tracking)
+    if (waypoints.length === 0 && !userSetOriginRef.current) {
       addWaypoint({
         coordinates: currentLocation,
         name: 'Current Location',
       });
       setFromQuery('Current Location');
-    } else {
+    } else if (waypoints.length > 0) {
       const firstWaypoint = waypoints[0];
-      if (firstWaypoint && firstWaypoint.name === 'Current Location') {
+      // Only update GPS location if user explicitly selected "Current Location"
+      // Do NOT override manually selected origins
+      if (firstWaypoint && firstWaypoint.name === 'Current Location' && !userSetOriginRef.current) {
         const distance = Math.sqrt(
           Math.pow(currentLocation.latitude - firstWaypoint.coordinates.latitude, 2) +
           Math.pow(currentLocation.longitude - firstWaypoint.coordinates.longitude, 2)
@@ -208,6 +216,7 @@ export const RoutePlanner: React.FC = () => {
     clearRoutes();
     setFromQuery('');
     setToQuery('');
+    userSetOriginRef.current = false; // Reset origin tracking
   };
 
   if (!isOpen) {
@@ -258,12 +267,17 @@ export const RoutePlanner: React.FC = () => {
                 {currentLocation && fromQuery !== 'Current Location' && (
                   <button
                     onClick={() => {
+                      userSetOriginRef.current = false; // Allow GPS tracking
                       setFromQuery('Current Location');
                       if (waypoints.length === 0) {
                         addWaypoint({ coordinates: currentLocation, name: 'Current Location' });
                       } else {
                         removeWaypoint(0);
                         addWaypoint({ coordinates: currentLocation, name: 'Current Location' });
+                      }
+                      // Recalculate route if destination exists
+                      if (waypoints.length >= 1) {
+                        setTimeout(() => handleCalculateRoute(), 100);
                       }
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-blue-600 hover:bg-blue-50 rounded"
@@ -280,6 +294,7 @@ export const RoutePlanner: React.FC = () => {
                       <button
                         key={s.id}
                         onClick={() => {
+                          userSetOriginRef.current = true; // Mark as user-selected origin
                           setFromQuery(s.placeName);
                           setFromSuggestions([]);
                           if (waypoints.length === 0) {
@@ -287,6 +302,10 @@ export const RoutePlanner: React.FC = () => {
                           } else {
                             removeWaypoint(0);
                             addWaypoint({ coordinates: s.coordinates, name: s.placeName });
+                          }
+                          // Recalculate route if destination exists
+                          if (waypoints.length >= 1) {
+                            setTimeout(() => handleCalculateRoute(), 100);
                           }
                         }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 truncate"
@@ -331,6 +350,10 @@ export const RoutePlanner: React.FC = () => {
                             removeWaypoint(waypoints.length - 1);
                             addWaypoint({ coordinates: s.coordinates, name: s.placeName });
                           }
+                          // Recalculate route if origin exists
+                          if (waypoints.length >= 1) {
+                            setTimeout(() => handleCalculateRoute(), 100);
+                          }
                         }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 truncate"
                       >
@@ -347,7 +370,13 @@ export const RoutePlanner: React.FC = () => {
               {profiles.map((p) => (
                 <button
                   key={p.value}
-                  onClick={() => setProfile(p.value)}
+                  onClick={() => {
+                    setProfile(p.value);
+                    // Recalculate route if waypoints exist
+                    if (waypoints.length >= 2) {
+                      setTimeout(() => handleCalculateRoute(), 100);
+                    }
+                  }}
                   title={p.title}
                   className={`flex-1 py-2 rounded-lg text-lg transition-all ${
                     selectedProfile === p.value
