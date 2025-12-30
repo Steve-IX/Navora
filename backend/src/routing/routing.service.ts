@@ -9,6 +9,7 @@ import {
   RouteWaypoint,
   Route,
 } from '@shared/types/routing';
+import { GeocodingService } from '../geocoding/geocoding.service';
 
 @Injectable()
 export class RoutingService {
@@ -23,6 +24,7 @@ export class RoutingService {
   constructor(
     private httpService: HttpService,
     private configService: ConfigService,
+    private geocodingService: GeocodingService,
   ) {
     this.mapboxAccessToken = this.configService.get<string>('MAPBOX_ACCESS_TOKEN');
     if (!this.mapboxAccessToken) {
@@ -134,8 +136,41 @@ export class RoutingService {
   }
 
   /**
+   * Validate ground transport distance and geographic constraints
+   * Ground transport cannot cross oceans or continents
+   */
+  private async validateGroundTransport(
+    from: { longitude: number; latitude: number },
+    to: { longitude: number; latitude: number },
+    maxDistanceKm: number = 500,
+  ): Promise<{ valid: boolean; reason?: string }> {
+    const distance = this.calculateGreatCircleDistance(from, to);
+    const distanceKm = distance / 1000;
+
+    // Check distance constraint
+    if (distanceKm > maxDistanceKm) {
+      return {
+        valid: false,
+        reason: `Ground transport distance (${distanceKm.toFixed(1)}km) exceeds maximum (${maxDistanceKm}km). Flight routing required.`,
+      };
+    }
+
+    // Check if locations are in same country (prevents ocean/continent crossing)
+    const sameCountry = await this.areInSameCountry(from, to);
+    if (!sameCountry) {
+      return {
+        valid: false,
+        reason: 'Ground transport cannot cross country borders. Flight routing required.',
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
    * Calculate ground transport route using Mapbox Directions API
    * Supports multiple transport modes: driving, walking, transit
+   * ENFORCES: Distance and geographic constraints
    */
   private async calculateGroundTransport(
     from: { longitude: number; latitude: number },
@@ -155,6 +190,15 @@ export class RoutingService {
       };
     }>;
   } | null> {
+    // Validate ground transport constraints first
+    const validation = await this.validateGroundTransport(from, to, 500);
+    if (!validation.valid) {
+      throw new HttpException(
+        validation.reason || 'Ground transport not feasible for this route',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     try {
       // Map transit to driving for Mapbox (transit requires different endpoint)
       const mapboxProfile = mode === 'transit' ? 'driving' : mode;
@@ -334,10 +378,35 @@ export class RoutingService {
         allCoordinates.push(...toAirportTransport.geometry);
       }
 
-      // Step 3: Find nearest arrival airport to destination
-      const arrivalAirportCandidate = await this.findNearestAirport(destination.coordinates);
+      // Get destination country to enforce same-country airport selection
+      const destinationCountry = await this.getCountryFromCoordinates(destination.coordinates);
+
+      // Step 3: Find nearest arrival airport IN SAME COUNTRY as destination
+      // Enforce 150km radius and same-country constraint
+      const arrivalAirportCandidate = await this.findNearestAirport(
+        destination.coordinates,
+        150, // 150km radius
+        destinationCountry || undefined,
+      );
       if (!arrivalAirportCandidate) {
-        throw new Error('Could not find arrival airport');
+        throw new HttpException(
+          `No commercial airport found within 150km of destination in ${destinationCountry || 'the selected region'}. Please select a location closer to an airport.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Validate arrival airport is in same country as destination
+      if (destinationCountry) {
+        const airportCountry = await this.getCountryFromCoordinates({
+          longitude: arrivalAirportCandidate.lng,
+          latitude: arrivalAirportCandidate.lat,
+        });
+        if (airportCountry && airportCountry !== destinationCountry) {
+          throw new HttpException(
+            `Selected arrival airport (${arrivalAirportCandidate.iata}) is in a different country. Please select a location closer to an airport in ${destinationCountry}.`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
       }
 
       // Validate: Prevent same origin and destination airports
@@ -522,8 +591,12 @@ export class RoutingService {
       const flightInfo: any = {
         departureAirport: departureAirport.name,
         departureIata: departureAirport.iata,
+        departureLat: departureAirport.lat,
+        departureLng: departureAirport.lng,
         arrivalAirport: arrivalAirportCandidate.name,
         arrivalIata: arrivalAirportCandidate.iata,
+        arrivalLat: arrivalAirportCandidate.lat,
+        arrivalLng: arrivalAirportCandidate.lng,
       };
 
       if (flightSegments.length > 0) {
@@ -555,6 +628,15 @@ export class RoutingService {
         weightName: 'duration',
         flightInfo,
       };
+
+      // FINAL VALIDATION: Validate entire journey before returning
+      const validationResult = await this.validateJourney(route, origin, destination);
+      if (!validationResult.valid) {
+        throw new HttpException(
+          validationResult.reason || 'Journey validation failed',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
       return {
         code: 'Ok',
@@ -1015,13 +1097,149 @@ export class RoutingService {
   }
 
   /**
+   * Validate entire journey for geographic consistency and sanity
+   * Checks: continent consistency, distance sanity, implausible detours
+   */
+  private async validateJourney(
+    route: Route,
+    origin: RouteWaypoint,
+    destination: RouteWaypoint,
+  ): Promise<{ valid: boolean; reason?: string }> {
+    // 1. Validate origin and destination countries
+    const originCountry = await this.getCountryFromCoordinates(origin.coordinates);
+    const destCountry = await this.getCountryFromCoordinates(destination.coordinates);
+
+    // 2. Check for intercontinental driving (ground transport > 500km)
+    for (const leg of route.legs) {
+      if (leg.transportMode && ['driving', 'walking', 'transit'].includes(leg.transportMode)) {
+        const legDistanceKm = leg.distance / 1000;
+        if (legDistanceKm > 500) {
+          return {
+            valid: false,
+            reason: `Invalid route: Ground transport segment (${legDistanceKm.toFixed(1)}km) exceeds maximum distance. This may indicate an intercontinental or implausible route.`,
+          };
+        }
+      }
+    }
+
+    // 3. Validate flight segments are logical
+    if (route.flightInfo) {
+      const flightDistance = this.calculateGreatCircleDistance(
+        { longitude: route.flightInfo.departureLng || 0, latitude: route.flightInfo.departureLat || 0 },
+        { longitude: route.flightInfo.arrivalLng || 0, latitude: route.flightInfo.arrivalLat || 0 },
+      );
+      
+      // Flight should be significant distance (at least 100km)
+      if (flightDistance < 100000) {
+        return {
+          valid: false,
+          reason: 'Invalid route: Flight segment is too short. Ground transport may be more appropriate.',
+        };
+      }
+    }
+
+    // 4. Check total distance sanity (should be reasonable compared to direct distance)
+    const directDistance = this.calculateGreatCircleDistance(origin.coordinates, destination.coordinates);
+    const routeDistance = route.distance;
+    const detourRatio = routeDistance / directDistance;
+
+    // If route is more than 3x the direct distance, it's likely implausible
+    if (detourRatio > 3) {
+      return {
+        valid: false,
+        reason: `Invalid route: Total route distance (${(routeDistance / 1000).toFixed(1)}km) is ${detourRatio.toFixed(1)}x the direct distance, indicating an implausible detour.`,
+      };
+    }
+
+    // 5. Validate airport selection consistency
+    if (route.flightInfo && originCountry && destCountry) {
+      // Departure airport should be in origin country
+      if (route.flightInfo.departureIata) {
+        // This is already validated during airport selection, but double-check
+        const depAirportCountry = await this.getCountryFromCoordinates({
+          longitude: route.flightInfo.departureLng || 0,
+          latitude: route.flightInfo.departureLat || 0,
+        });
+        if (depAirportCountry && depAirportCountry !== originCountry) {
+          return {
+            valid: false,
+            reason: `Invalid route: Departure airport (${route.flightInfo.departureIata}) is not in origin country (${originCountry}).`,
+          };
+        }
+      }
+
+      // Arrival airport should be in destination country
+      if (route.flightInfo.arrivalIata) {
+        const arrAirportCountry = await this.getCountryFromCoordinates({
+          longitude: route.flightInfo.arrivalLng || 0,
+          latitude: route.flightInfo.arrivalLat || 0,
+        });
+        if (arrAirportCountry && arrAirportCountry !== destCountry) {
+          return {
+            valid: false,
+            reason: `Invalid route: Arrival airport (${route.flightInfo.arrivalIata}) is not in destination country (${destCountry}).`,
+          };
+        }
+      }
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Get country code from coordinates using reverse geocoding
+   */
+  private async getCountryFromCoordinates(
+    coordinates: { longitude: number; latitude: number },
+  ): Promise<string | null> {
+    try {
+      const results = await this.geocodingService.reverseGeocode(coordinates, 1);
+      if (results && results.length > 0) {
+        // Extract country from context (usually the last context item)
+        const context = results[0].context;
+        if (context && context.length > 0) {
+          // Country is typically the last context item
+          const countryContext = context[context.length - 1];
+          // Mapbox returns country codes in shortCode field
+          return countryContext.shortCode || countryContext.text || null;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.warn('Failed to get country from coordinates:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if two coordinates are in the same country
+   */
+  private async areInSameCountry(
+    coord1: { longitude: number; latitude: number },
+    coord2: { longitude: number; latitude: number },
+  ): Promise<boolean> {
+    const country1 = await this.getCountryFromCoordinates(coord1);
+    const country2 = await this.getCountryFromCoordinates(coord2);
+    
+    if (!country1 || !country2) {
+      // If we can't determine country, assume they're in the same country if close
+      const distance = this.calculateGreatCircleDistance(coord1, coord2);
+      return distance < 500000; // Within 500km, likely same country
+    }
+    
+    return country1 === country2;
+  }
+
+  /**
    * Find nearest airport to given coordinates using AviationStack API
-   * Searches within a configurable radius (default 200km) for viable commercial airports
+   * Searches within a configurable radius (default 150km) for viable commercial airports
+   * ENFORCES: Airport must be in same country as origin/destination
    */
   private async findNearestAirport(
     coordinates: { longitude: number; latitude: number },
-    searchRadiusKm: number = 200,
-  ): Promise<{ iata: string; name: string; lat: number; lng: number } | null> {
+    searchRadiusKm: number = 150,
+    requiredCountry?: string | null,
+  ): Promise<{ iata: string; name: string; lat: number; lng: number; country?: string } | null> {
     // Check cache first
     const cacheKey = `${coordinates.latitude.toFixed(2)},${coordinates.longitude.toFixed(2)}`;
     const cached = this.airportCache.get(cacheKey);
@@ -1102,13 +1320,20 @@ export class RoutingService {
         }
       }
 
-      // If no airport found within radius, expand search or use fallback
+      // If no airport found within radius, try expanding search (but still enforce country)
       if (!nearestAirport) {
-        // Try expanding search to 500km
-        if (searchRadiusKm < 500) {
-          return this.findNearestAirport(coordinates, 500);
+        // Try expanding search to 300km (still reasonable for same-country travel)
+        if (searchRadiusKm < 300) {
+          return this.findNearestAirport(coordinates, 300, requiredCountry || undefined);
         }
-        // Final fallback
+        // If still no airport, and we have country requirement, throw error
+        if (requiredCountry) {
+          throw new HttpException(
+            `No commercial airport found within 300km in ${requiredCountry}. Please select a location closer to an airport.`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        // Final fallback (only if no country requirement)
         const fallback = this.getFallbackAirport(coordinates);
         if (fallback) {
           this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });

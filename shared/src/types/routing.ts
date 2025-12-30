@@ -52,8 +52,12 @@ export interface Route {
     flightNumber?: string;
     departureAirport?: string;
     departureIata?: string;
+    departureLat?: number;
+    departureLng?: number;
     arrivalAirport?: string;
     arrivalIata?: string;
+    arrivalLat?: number;
+    arrivalLng?: number;
     scheduledDeparture?: string;
     scheduledArrival?: string;
     flightStatus?: string;
