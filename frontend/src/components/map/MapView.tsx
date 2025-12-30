@@ -439,7 +439,10 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     };
   }, [markers, isLoaded]);
 
-  // Update routes
+  // Airport markers ref
+  const airportMarkersRef = useRef<mapboxgl.Marker[]>([]);
+
+  // Update routes with enhanced styling and airport markers
   useEffect(() => {
     if (!map.current || !isLoaded) return;
 
@@ -454,10 +457,30 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
       }
     });
 
-    // Add new routes
+    // Remove existing airport markers
+    airportMarkersRef.current.forEach(marker => marker.remove());
+    airportMarkersRef.current = [];
+
+    // Add new routes with transport mode styling
     routes.forEach((route) => {
       const sourceId = `route-${route.id}`;
       const layerId = `route-${route.id}-layer`;
+
+      // Determine route color and style based on transport mode
+      let routeColor = route.color || '#3b82f6';
+      let lineWidth = route.width || 4;
+
+      // Check if route has flight segments
+      const hasFlightLegs = route.legs?.some(leg => leg.transportMode === 'flight');
+      if (hasFlightLegs) {
+        routeColor = '#6366f1'; // Indigo for flights
+        lineWidth = 3;
+      } else if (route.legs?.some(leg => leg.transportMode === 'walking')) {
+        routeColor = '#10b981'; // Green for walking
+        lineWidth = 2;
+      } else if (route.legs?.some(leg => leg.transportMode === 'transit')) {
+        routeColor = '#a855f7'; // Purple for transit
+      }
 
       map.current!.addSource(sourceId, {
         type: 'geojson',
@@ -474,7 +497,8 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
         },
       });
 
-      map.current!.addLayer({
+      // Add route layer with appropriate styling
+      const layerConfig: any = {
         id: layerId,
         type: 'line',
         source: sourceId,
@@ -483,11 +507,117 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
           'line-cap': 'round',
         },
         paint: {
-          'line-color': route.color || '#3b82f6',
-          'line-width': route.width || 4,
+          'line-color': routeColor,
+          'line-width': lineWidth,
         },
-      });
+      };
+
+      // Add dashed pattern for flight routes if supported
+      if (hasFlightLegs) {
+        layerConfig.paint['line-dasharray'] = [2, 2];
+      }
+
+      map.current!.addLayer(layerConfig);
+
+      // Add airport markers for flight routes
+      if (route.flightInfo) {
+        // Departure airport marker
+        if (route.flightInfo.departureIata) {
+          // Find departure airport coordinates from route geometry (first point)
+          const departureCoords = route.geometry.coordinates[0];
+          if (departureCoords) {
+            const airportEl = document.createElement('div');
+            airportEl.className = 'airport-marker';
+            airportEl.innerHTML = '✈️';
+            airportEl.style.fontSize = '20px';
+            airportEl.style.cursor = 'pointer';
+            
+            const airportMarker = new mapboxgl.Marker(airportEl)
+              .setLngLat([departureCoords.longitude, departureCoords.latitude])
+              .setPopup(
+                new mapboxgl.Popup({ offset: 25 })
+                  .setHTML(`
+                    <div class="p-2">
+                      <div class="font-semibold text-sm">${route.flightInfo.departureAirport || 'Departure Airport'}</div>
+                      <div class="text-xs text-gray-600">${route.flightInfo.departureIata}</div>
+                    </div>
+                  `)
+              )
+              .addTo(map.current!);
+            
+            airportMarkersRef.current.push(airportMarker);
+          }
+        }
+
+        // Arrival airport marker
+        if (route.flightInfo.arrivalIata) {
+          // Find arrival airport coordinates from route geometry (last point)
+          const arrivalCoords = route.geometry.coordinates[route.geometry.coordinates.length - 1];
+          if (arrivalCoords) {
+            const airportEl = document.createElement('div');
+            airportEl.className = 'airport-marker';
+            airportEl.innerHTML = '✈️';
+            airportEl.style.fontSize = '20px';
+            airportEl.style.cursor = 'pointer';
+            
+            const airportMarker = new mapboxgl.Marker(airportEl)
+              .setLngLat([arrivalCoords.longitude, arrivalCoords.latitude])
+              .setPopup(
+                new mapboxgl.Popup({ offset: 25 })
+                  .setHTML(`
+                    <div class="p-2">
+                      <div class="font-semibold text-sm">${route.flightInfo.arrivalAirport || 'Arrival Airport'}</div>
+                      <div class="text-xs text-gray-600">${route.flightInfo.arrivalIata}</div>
+                    </div>
+                  `)
+              )
+              .addTo(map.current!);
+            
+            airportMarkersRef.current.push(airportMarker);
+          }
+        }
+
+        // Add transfer airport markers
+        if (route.flightInfo.transfers && route.flightInfo.transfers.length > 0) {
+          route.flightInfo.transfers.forEach((transfer, idx) => {
+            // Estimate transfer location (middle of route for now)
+            // In production, would look up actual airport coordinates
+            const midPoint = Math.floor(route.geometry.coordinates.length / 2);
+            const transferCoords = route.geometry.coordinates[midPoint + idx];
+            
+            if (transferCoords) {
+              const transferEl = document.createElement('div');
+              transferEl.className = 'transfer-marker';
+              transferEl.innerHTML = '🔄';
+              transferEl.style.fontSize = '18px';
+              transferEl.style.cursor = 'pointer';
+              
+              const transferMarker = new mapboxgl.Marker(transferEl)
+                .setLngLat([transferCoords.longitude, transferCoords.latitude])
+                .setPopup(
+                  new mapboxgl.Popup({ offset: 25 })
+                    .setHTML(`
+                      <div class="p-2">
+                        <div class="font-semibold text-sm">Transfer</div>
+                        <div class="text-xs text-gray-600">${transfer.airport || transfer.airportIata}</div>
+                        <div class="text-xs text-orange-600 mt-1">Layover: ${Math.round((transfer.layoverDuration || 0) / 60)} min</div>
+                      </div>
+                    `)
+                )
+                .addTo(map.current!);
+              
+              airportMarkersRef.current.push(transferMarker);
+            }
+          });
+        }
+      }
     });
+
+    return () => {
+      // Cleanup airport markers
+      airportMarkersRef.current.forEach(marker => marker.remove());
+      airportMarkersRef.current = [];
+    };
   }, [routes, isLoaded]);
 
   // Create custom user location marker element with pulsing animation

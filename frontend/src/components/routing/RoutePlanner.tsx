@@ -454,12 +454,46 @@ export const RoutePlanner: React.FC = () => {
                 </div>
               )}
 
-              {/* Flight Info (compact) */}
+              {/* Transport Mode Chain */}
+              {selectedRoute.legs && selectedRoute.legs.length > 0 && (
+                <div className="px-3 py-2 border-t border-gray-100 bg-gray-50">
+                  <div className="text-xs text-gray-500 mb-1.5">Journey</div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {selectedRoute.legs.map((leg, idx) => {
+                      if (!leg.transportMode) return null;
+                      const icons: Record<string, string> = {
+                        walking: '🚶',
+                        driving: '🚗',
+                        transit: '🚌',
+                        flight: '✈️',
+                        transfer: '🔄',
+                      };
+                      const colors: Record<string, string> = {
+                        walking: 'bg-green-100 text-green-700',
+                        driving: 'bg-blue-100 text-blue-700',
+                        transit: 'bg-purple-100 text-purple-700',
+                        flight: 'bg-indigo-100 text-indigo-700',
+                        transfer: 'bg-orange-100 text-orange-700',
+                      };
+                      return (
+                        <React.Fragment key={idx}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[leg.transportMode] || 'bg-gray-100 text-gray-700'}`}>
+                            {icons[leg.transportMode] || '→'} {leg.modeLabel || leg.transportMode}
+                          </span>
+                          {idx < selectedRoute.legs.length - 1 && <span className="text-gray-400 text-xs">→</span>}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Flight Info (enhanced) */}
               {selectedRoute.flightInfo && (
                 <div className="px-3 py-2 border-t border-gray-100 bg-blue-50">
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center justify-between text-sm mb-1">
                     <span className="font-medium text-blue-900">
-                      ✈️ {selectedRoute.flightInfo.airline} {selectedRoute.flightInfo.flightNumber || ''}
+                      ✈️ {selectedRoute.flightInfo.airline || 'Flight'} {selectedRoute.flightInfo.flightNumber || ''}
                     </span>
                     {selectedRoute.flightInfo.flightStatus && (
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -471,8 +505,55 @@ export const RoutePlanner: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-blue-700 mt-1">
-                    {selectedRoute.flightInfo.departureIata} → {selectedRoute.flightInfo.arrivalIata}
+                  <div className="text-xs text-blue-700 space-y-0.5">
+                    <div>
+                      <span className="font-medium">{selectedRoute.flightInfo.departureAirport}</span> ({selectedRoute.flightInfo.departureIata})
+                    </div>
+                    <div className="text-blue-500">↓</div>
+                    <div>
+                      <span className="font-medium">{selectedRoute.flightInfo.arrivalAirport}</span> ({selectedRoute.flightInfo.arrivalIata})
+                    </div>
+                    {selectedRoute.flightInfo.segments && selectedRoute.flightInfo.segments.length > 1 && (
+                      <div className="mt-1 pt-1 border-t border-blue-200">
+                        <div className="text-orange-600 font-medium">
+                          {selectedRoute.flightInfo.segments.length} flight segments
+                        </div>
+                        {selectedRoute.flightInfo.transfers && selectedRoute.flightInfo.transfers.length > 0 && (
+                          <div className="text-xs text-orange-600">
+                            Transfers: {selectedRoute.flightInfo.transfers.map(t => t.airportIata).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Segment Breakdown */}
+              {selectedRoute.legs && selectedRoute.legs.length > 1 && (
+                <div className="px-3 py-2 border-t border-gray-100 bg-white">
+                  <div className="text-xs text-gray-500 mb-1.5">Segment Breakdown</div>
+                  <div className="space-y-1">
+                    {selectedRoute.legs.map((leg, idx) => {
+                      const icons: Record<string, string> = {
+                        walking: '🚶',
+                        driving: '🚗',
+                        transit: '🚌',
+                        flight: '✈️',
+                        transfer: '🔄',
+                      };
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1.5">
+                            <span>{icons[leg.transportMode || ''] || '→'}</span>
+                            <span className="text-gray-700">{leg.modeLabel || leg.transportMode || 'Travel'}</span>
+                          </span>
+                          <span className="text-gray-500">
+                            {formatDuration(leg.duration)} · {formatDistance(leg.distance)}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

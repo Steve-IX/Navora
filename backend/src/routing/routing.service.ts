@@ -16,6 +16,9 @@ export class RoutingService {
   private readonly mapboxApiUrl = 'https://api.mapbox.com/directions/v5';
   private readonly aviationStackApiKey: string;
   private readonly aviationStackApiUrl = 'https://api.aviationstack.com/v1';
+  // Airport cache: coordinates -> airport info with TTL
+  private airportCache: Map<string, { airport: { iata: string; name: string; lat: number; lng: number }; expires: number }> = new Map();
+  private readonly airportCacheTTL = 24 * 60 * 60 * 1000; // 24 hours
 
   constructor(
     private httpService: HttpService,
@@ -95,14 +98,331 @@ export class RoutingService {
   }
 
   /**
-   * Calculate flight route using AviationStack API or great-circle distance fallback
-   * This creates a straight-line route between waypoints (as flights follow great-circle paths)
+   * Calculate ground transport route using Mapbox Directions API
+   * Supports multiple transport modes: driving, walking, transit
    */
-  private async calculateFlightRoute(waypoints: RouteWaypoint[]): Promise<RoutingResponse> {
+  private async calculateGroundTransport(
+    from: { longitude: number; latitude: number },
+    to: { longitude: number; latitude: number },
+    mode: 'driving' | 'walking' | 'transit' = 'driving',
+  ): Promise<{
+    distance: number;
+    duration: number;
+    geometry: Array<{ longitude: number; latitude: number }>;
+    steps: Array<{
+      distance: number;
+      duration: number;
+      instruction: string;
+      maneuver: {
+        type: string;
+        location: { longitude: number; latitude: number };
+      };
+    }>;
+  } | null> {
+    try {
+      // Map transit to driving for Mapbox (transit requires different endpoint)
+      const mapboxProfile = mode === 'transit' ? 'driving' : mode;
+      const coordinates = `${from.longitude},${from.latitude};${to.longitude},${to.latitude}`;
+      
+      const url = `${this.mapboxApiUrl}/mapbox/${mapboxProfile}/${coordinates}?access_token=${this.mapboxAccessToken}&geometries=geojson&overview=full&steps=true`;
+      
+      const response = await firstValueFrom(this.httpService.get(url));
+      const data = response.data;
+
+      if (!data.routes || data.routes.length === 0) {
+        // Fallback: estimate based on distance
+        const distance = this.calculateGreatCircleDistance(from, to);
+        const speed = mode === 'walking' ? 1.4 : mode === 'transit' ? 10 : 50; // m/s
+        const duration = distance / speed;
+        
+        return {
+          distance,
+          duration,
+          geometry: [from, to],
+          steps: [{
+            distance,
+            duration,
+            instruction: `Travel to destination via ${mode}`,
+            maneuver: {
+              type: 'depart',
+              location: from,
+            },
+          }],
+        };
+      }
+
+      const route = data.routes[0];
+      const leg = route.legs[0];
+
+      return {
+        distance: route.distance,
+        duration: route.duration,
+        geometry: route.geometry.coordinates.map((coord: [number, number]) => ({
+          longitude: coord[0],
+          latitude: coord[1],
+        })),
+        steps: leg.steps?.map((step: any) => ({
+          distance: step.distance,
+          duration: step.duration,
+          instruction: step.maneuver.instruction || step.maneuver.type,
+          maneuver: {
+            type: step.maneuver.type,
+            location: {
+              longitude: step.maneuver.location[0],
+              latitude: step.maneuver.location[1],
+            },
+          },
+        })) || [],
+      };
+    } catch (error) {
+      console.warn('Error calculating ground transport, using fallback:', error);
+      // Fallback: estimate based on distance
+      const distance = this.calculateGreatCircleDistance(from, to);
+      const speed = mode === 'walking' ? 1.4 : mode === 'transit' ? 10 : 50; // m/s
+      const duration = distance / speed;
+      
+      return {
+        distance,
+        duration,
+        geometry: [from, to],
+        steps: [{
+          distance,
+          duration,
+          instruction: `Travel to destination via ${mode} (estimated)`,
+          maneuver: {
+            type: 'depart',
+            location: from,
+          },
+        }],
+      };
+    }
+  }
+
+  /**
+   * Build multimodal flight journey with ground transport and flight segments
+   */
+  private async buildMultimodalFlightJourney(
+    origin: RouteWaypoint,
+    destination: RouteWaypoint,
+  ): Promise<RoutingResponse> {
+    const legs: any[] = [];
+    const allCoordinates: Array<{ longitude: number; latitude: number }> = [];
+    let totalDistance = 0;
+    let totalDuration = 0;
+    const flightSegments: any[] = [];
+    const transfers: any[] = [];
+
+    try {
+      // Step 1: Find nearest departure airport
+      const departureAirport = await this.findNearestAirport(origin.coordinates);
+      if (!departureAirport) {
+        throw new Error('Could not find departure airport');
+      }
+
+      // Step 2: Calculate ground transport from origin to departure airport
+      const toAirportTransport = await this.calculateGroundTransport(
+        origin.coordinates,
+        { longitude: departureAirport.lng, latitude: departureAirport.lat },
+        'driving', // Default to driving, could be made configurable
+      );
+
+      if (toAirportTransport) {
+        legs.push({
+          distance: toAirportTransport.distance,
+          duration: toAirportTransport.duration,
+          steps: toAirportTransport.steps.map((step: any) => ({
+            ...step,
+            transportMode: 'driving',
+          })),
+          transportMode: 'driving',
+          modeLabel: `Drive to ${departureAirport.name} (${departureAirport.iata})`,
+        });
+        totalDistance += toAirportTransport.distance;
+        totalDuration += toAirportTransport.duration;
+        allCoordinates.push(...toAirportTransport.geometry);
+      }
+
+      // Step 3: Find nearest arrival airport to destination
+      const arrivalAirportCandidate = await this.findNearestAirport(destination.coordinates);
+      if (!arrivalAirportCandidate) {
+        throw new Error('Could not find arrival airport');
+      }
+
+      // Step 4: Find optimal flight route (direct or connecting)
+      const flightRoute = await this.findOptimalFlightRoute(departureAirport, arrivalAirportCandidate);
+
+      // Step 5: Add flight segments as legs
+      for (let i = 0; i < flightRoute.segments.length; i++) {
+        const segment = flightRoute.segments[i];
+        
+        // Determine segment start and end coordinates
+        let segmentStart: { longitude: number; latitude: number };
+        let segmentEnd: { longitude: number; latitude: number };
+        
+        if (i === 0) {
+          segmentStart = { longitude: departureAirport.lng, latitude: departureAirport.lat };
+        } else {
+          // Use previous segment's arrival airport coordinates
+          const prevSegment = flightRoute.segments[i - 1];
+          // Try to get coordinates from transfer or estimate
+          const transfer = flightRoute.transfers[i - 1];
+          if (transfer) {
+            // For now, estimate - in production, would look up airport coordinates
+            segmentStart = { longitude: 0, latitude: 0 }; // Would need airport DB lookup
+          } else {
+            segmentStart = { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat };
+          }
+        }
+        
+        if (i === flightRoute.segments.length - 1) {
+          segmentEnd = { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat };
+        } else {
+          // Intermediate segment - use transfer airport coordinates (estimated)
+          segmentEnd = { longitude: 0, latitude: 0 }; // Would need airport DB lookup
+        }
+        
+        const segmentDistance = this.calculateGreatCircleDistance(segmentStart, segmentEnd);
+        const segmentGeometry = this.generateGreatCirclePath([segmentStart, segmentEnd]);
+
+        legs.push({
+          distance: segmentDistance,
+          duration: segment.duration,
+          steps: [{
+            distance: segmentDistance,
+            duration: segment.duration,
+            instruction: segment.flightNumber
+              ? `Flight ${segment.airline || ''} ${segment.flightNumber} from ${segment.departureAirport} (${segment.departureIata}) to ${segment.arrivalAirport} (${segment.arrivalIata})`
+              : `Fly from ${segment.departureAirport} to ${segment.arrivalAirport}`,
+            maneuver: {
+              type: 'depart',
+              location: segmentStart,
+            },
+            transportMode: 'flight',
+          }],
+          transportMode: 'flight',
+          modeLabel: segment.flightNumber 
+            ? `Flight ${segment.flightNumber}`
+            : `Flight ${segment.departureIata} → ${segment.arrivalIata}`,
+        });
+
+        totalDistance += segmentDistance;
+        totalDuration += segment.duration;
+        allCoordinates.push(...segmentGeometry);
+
+        flightSegments.push(segment);
+
+        // Add transfer if not last segment
+        if (i < flightRoute.segments.length - 1 && flightRoute.transfers.length > i) {
+          const transfer = flightRoute.transfers[i];
+          transfers.push(transfer);
+          
+          legs.push({
+            distance: 0,
+            duration: transfer.layoverDuration,
+            steps: [{
+              distance: 0,
+              duration: transfer.layoverDuration,
+              instruction: `Transfer at ${transfer.airport} (${transfer.airportIata}) - Layover: ${Math.round(transfer.layoverDuration / 60)} minutes`,
+              maneuver: {
+                type: 'arrive',
+                location: { longitude: 0, latitude: 0 },
+              },
+              transportMode: 'transfer',
+              transferInfo: {
+                airport: transfer.airport,
+                layoverDuration: transfer.layoverDuration,
+              },
+            }],
+            transportMode: 'transfer',
+            modeLabel: `Transfer at ${transfer.airportIata}`,
+          });
+          totalDuration += transfer.layoverDuration;
+        }
+      }
+
+      // Step 6: Calculate ground transport from arrival airport to destination
+      const fromAirportTransport = await this.calculateGroundTransport(
+        { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat },
+        destination.coordinates,
+        'driving',
+      );
+
+      if (fromAirportTransport) {
+        legs.push({
+          distance: fromAirportTransport.distance,
+          duration: fromAirportTransport.duration,
+          steps: fromAirportTransport.steps.map((step: any) => ({
+            ...step,
+            transportMode: 'driving',
+          })),
+          transportMode: 'driving',
+          modeLabel: `Drive from ${arrivalAirportCandidate.name} (${arrivalAirportCandidate.iata}) to destination`,
+        });
+        totalDistance += fromAirportTransport.distance;
+        totalDuration += fromAirportTransport.duration;
+        allCoordinates.push(...fromAirportTransport.geometry);
+      }
+
+      // Build flight info
+      const flightInfo: any = {
+        departureAirport: departureAirport.name,
+        departureIata: departureAirport.iata,
+        arrivalAirport: arrivalAirportCandidate.name,
+        arrivalIata: arrivalAirportCandidate.iata,
+      };
+
+      if (flightSegments.length > 0) {
+        const firstSegment = flightSegments[0];
+        const lastSegment = flightSegments[flightSegments.length - 1];
+        
+        flightInfo.airline = firstSegment.airline;
+        flightInfo.airlineIata = firstSegment.airlineIata;
+        flightInfo.flightNumber = firstSegment.flightNumber;
+        flightInfo.scheduledDeparture = firstSegment.scheduledDeparture;
+        flightInfo.scheduledArrival = lastSegment.scheduledArrival;
+        flightInfo.flightStatus = firstSegment.flightStatus;
+        flightInfo.aircraft = firstSegment.aircraft;
+
+        if (flightSegments.length > 1) {
+          flightInfo.segments = flightSegments;
+          flightInfo.transfers = transfers;
+        }
+      }
+
+      const route: Route = {
+        distance: totalDistance,
+        duration: totalDuration,
+        geometry: {
+          coordinates: allCoordinates,
+        },
+        legs,
+        weight: totalDuration,
+        weightName: 'duration',
+        flightInfo,
+      };
+
+      return {
+        code: 'Ok',
+        routes: [route],
+        waypoints: [
+          { location: origin.coordinates, name: origin.name },
+          { location: destination.coordinates, name: destination.name },
+        ],
+      };
+    } catch (error) {
+      console.error('Error building multimodal flight journey:', error);
+      // Fallback to simple great-circle route
+      return this.calculateFlightRouteFallback([origin, destination]);
+    }
+  }
+
+  /**
+   * Fallback flight route calculation (simple great-circle)
+   */
+  private calculateFlightRouteFallback(waypoints: RouteWaypoint[]): RoutingResponse {
     const coordinates: Array<{ longitude: number; latitude: number }> = [];
     let totalDistance = 0;
 
-    // Calculate distances and create route geometry
     for (let i = 0; i < waypoints.length; i++) {
       const wp = waypoints[i];
       coordinates.push(wp.coordinates);
@@ -117,64 +437,34 @@ export class RoutingService {
       }
     }
 
-    // Average commercial flight speed: ~900 km/h (250 m/s)
-    // Add 1 hour for takeoff/landing procedures
-    const flightSpeedMps = 250; // meters per second
-    const flightDuration = totalDistance / flightSpeedMps + 3600; // +1 hour for procedures
-
-    // Create a smooth great-circle path (simplified with intermediate points)
+    const flightSpeedMps = 250;
+    const flightDuration = totalDistance / flightSpeedMps + 3600;
     const routeCoordinates = this.generateGreatCirclePath(coordinates);
-
-    // Try to get real flight data from AviationStack if API key is configured
-    let flightInfo = undefined;
-    if (this.aviationStackApiKey && waypoints.length === 2) {
-      try {
-        flightInfo = await this.getFlightInfoFromAviationStack(waypoints[0], waypoints[1]);
-      } catch (error) {
-        console.warn('Failed to get flight info from AviationStack, using fallback:', error);
-      }
-    }
 
     const route: Route = {
       distance: totalDistance,
-      duration: flightInfo?.duration || flightDuration,
+      duration: flightDuration,
       geometry: {
         coordinates: routeCoordinates,
       },
-      legs: [
-        {
+      legs: [{
+        distance: totalDistance,
+        duration: flightDuration,
+        steps: [{
           distance: totalDistance,
-          duration: flightInfo?.duration || flightDuration,
-          steps: [
-            {
-              distance: totalDistance,
-              duration: flightInfo?.duration || flightDuration,
-              instruction: flightInfo 
-                ? `Flight ${flightInfo.airline} ${flightInfo.flightNumber} from ${flightInfo.departureAirport} to ${flightInfo.arrivalAirport}`
-                : 'Fly direct to destination',
-              maneuver: {
-                type: 'depart',
-                location: waypoints[0].coordinates,
-              },
-            },
-          ],
-        },
-      ],
-      weight: flightInfo?.duration || flightDuration,
+          duration: flightDuration,
+          instruction: 'Fly direct to destination (estimated)',
+          maneuver: {
+            type: 'depart',
+            location: waypoints[0].coordinates,
+          },
+          transportMode: 'flight',
+        }],
+        transportMode: 'flight',
+        modeLabel: 'Flight',
+      }],
+      weight: flightDuration,
       weightName: 'duration',
-      flightInfo: flightInfo ? {
-        airline: flightInfo.airline,
-        airlineIata: flightInfo.airlineIata,
-        flightNumber: flightInfo.flightNumber,
-        departureAirport: flightInfo.departureAirport,
-        departureIata: flightInfo.departureIata,
-        arrivalAirport: flightInfo.arrivalAirport,
-        arrivalIata: flightInfo.arrivalIata,
-        scheduledDeparture: flightInfo.scheduledDeparture,
-        scheduledArrival: flightInfo.scheduledArrival,
-        flightStatus: flightInfo.flightStatus,
-        aircraft: flightInfo.aircraft,
-      } : undefined,
     };
 
     return {
@@ -188,8 +478,295 @@ export class RoutingService {
   }
 
   /**
+   * Calculate flight route using multimodal journey builder
+   * This creates a realistic route with ground transport and flight segments
+   */
+  private async calculateFlightRoute(waypoints: RouteWaypoint[]): Promise<RoutingResponse> {
+    if (waypoints.length < 2) {
+      throw new HttpException(
+        'At least two waypoints are required for flight routing',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // For now, support only origin-destination pairs
+    // Multi-waypoint flights could be added in the future
+    if (waypoints.length === 2) {
+      return this.buildMultimodalFlightJourney(waypoints[0], waypoints[1]);
+    }
+
+    // For multiple waypoints, chain them together
+    // This is a simplified approach - could be enhanced
+    return this.calculateFlightRouteFallback(waypoints);
+  }
+
+  /**
+   * Find optimal flight route (direct or connecting) between two airports
+   * Returns flight segments with transfer information
+   */
+  private async findOptimalFlightRoute(
+    departureAirport: { iata: string; name: string; lat: number; lng: number },
+    arrivalAirport: { iata: string; name: string; lat: number; lng: number },
+  ): Promise<{
+    segments: Array<{
+      airline?: string;
+      airlineIata?: string;
+      flightNumber?: string;
+      departureAirport: string;
+      departureIata: string;
+      arrivalAirport: string;
+      arrivalIata: string;
+      scheduledDeparture?: string;
+      scheduledArrival?: string;
+      flightStatus?: string;
+      aircraft?: string;
+      duration: number;
+    }>;
+    transfers: Array<{
+      airport: string;
+      airportIata: string;
+      layoverDuration: number;
+    }>;
+    totalDuration: number;
+  }> {
+    if (!this.aviationStackApiKey) {
+      // Fallback: estimate direct flight
+      const distance = this.calculateGreatCircleDistance(
+        { longitude: departureAirport.lng, latitude: departureAirport.lat },
+        { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+      );
+      const flightSpeedMps = 250; // m/s
+      const duration = distance / flightSpeedMps + 3600; // +1 hour for procedures
+      
+      return {
+        segments: [{
+          departureAirport: departureAirport.name,
+          departureIata: departureAirport.iata,
+          arrivalAirport: arrivalAirport.name,
+          arrivalIata: arrivalAirport.iata,
+          duration,
+        }],
+        transfers: [],
+        totalDuration: duration,
+      };
+    }
+
+    try {
+      // First, try to find direct flights
+      const directUrl = `${this.aviationStackApiUrl}/flights?access_key=${this.aviationStackApiKey}&dep_iata=${departureAirport.iata}&arr_iata=${arrivalAirport.iata}&limit=5`;
+      
+      try {
+        const directResponse = await firstValueFrom(this.httpService.get(directUrl));
+        const directData = directResponse.data;
+
+        if (!directData.error && directData.data && directData.data.length > 0) {
+          // Found direct flight
+          const flight = directData.data[0];
+          let duration = this.calculateGreatCircleDistance(
+            { longitude: departureAirport.lng, latitude: departureAirport.lat },
+            { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+          ) / 250 + 3600;
+
+          if (flight.departure?.scheduled && flight.arrival?.scheduled) {
+            const depTime = new Date(flight.departure.scheduled).getTime();
+            const arrTime = new Date(flight.arrival.scheduled).getTime();
+            if (arrTime > depTime) {
+              duration = (arrTime - depTime) / 1000;
+            }
+          }
+
+          return {
+            segments: [{
+              airline: flight.airline?.name,
+              airlineIata: flight.airline?.iata,
+              flightNumber: flight.flight?.iata || flight.flight?.number,
+              departureAirport: flight.departure?.airport || departureAirport.name,
+              departureIata: flight.departure?.iata || departureAirport.iata,
+              arrivalAirport: flight.arrival?.airport || arrivalAirport.name,
+              arrivalIata: flight.arrival?.iata || arrivalAirport.iata,
+              scheduledDeparture: flight.departure?.scheduled,
+              scheduledArrival: flight.arrival?.scheduled,
+              flightStatus: flight.flight_status,
+              aircraft: flight.aircraft?.registration,
+              duration,
+            }],
+            transfers: [],
+            totalDuration: duration,
+          };
+        }
+      } catch (error) {
+        console.warn('Error searching for direct flights:', error);
+      }
+
+      // No direct flight found, try to find connecting flights via major hubs
+      const majorHubs = ['JFK', 'LAX', 'ORD', 'LHR', 'CDG', 'FRA', 'DXB', 'HND', 'SIN', 'SYD', 'GRU', 'JNB'];
+      
+      // Find hubs that are reasonable connections
+      const connectionHubs = majorHubs.filter(hub => 
+        hub !== departureAirport.iata && hub !== arrivalAirport.iata
+      );
+
+      let bestConnection: {
+        segments: Array<any>;
+        transfers: Array<any>;
+        totalDuration: number;
+      } | null = null;
+      let bestTotalDuration = Infinity;
+
+      // Try up to 3 connection hubs to avoid too many API calls
+      for (const hub of connectionHubs.slice(0, 3)) {
+        try {
+          // Find flight from departure to hub
+          const leg1Url = `${this.aviationStackApiUrl}/flights?access_key=${this.aviationStackApiKey}&dep_iata=${departureAirport.iata}&arr_iata=${hub}&limit=1`;
+          const leg1Response = await firstValueFrom(this.httpService.get(leg1Url));
+          const leg1Data = leg1Response.data;
+
+          if (leg1Data.error || !leg1Data.data || leg1Data.data.length === 0) {
+            continue;
+          }
+
+          // Find flight from hub to arrival
+          const leg2Url = `${this.aviationStackApiUrl}/flights?access_key=${this.aviationStackApiKey}&dep_iata=${hub}&arr_iata=${arrivalAirport.iata}&limit=1`;
+          const leg2Response = await firstValueFrom(this.httpService.get(leg2Url));
+          const leg2Data = leg2Response.data;
+
+          if (leg2Data.error || !leg2Data.data || leg2Data.data.length === 0) {
+            continue;
+          }
+
+          const leg1 = leg1Data.data[0];
+          const leg2 = leg2Data.data[0];
+
+          // Calculate durations
+          let leg1Duration = this.calculateGreatCircleDistance(
+            { longitude: departureAirport.lng, latitude: departureAirport.lat },
+            { longitude: 0, latitude: 0 }, // Hub coordinates would be better, but using estimate
+          ) / 250 + 3600;
+
+          let leg2Duration = this.calculateGreatCircleDistance(
+            { longitude: 0, latitude: 0 },
+            { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+          ) / 250 + 3600;
+
+          if (leg1.departure?.scheduled && leg1.arrival?.scheduled) {
+            const depTime = new Date(leg1.departure.scheduled).getTime();
+            const arrTime = new Date(leg1.arrival.scheduled).getTime();
+            if (arrTime > depTime) {
+              leg1Duration = (arrTime - depTime) / 1000;
+            }
+          }
+
+          if (leg2.departure?.scheduled && leg2.arrival?.scheduled) {
+            const depTime = new Date(leg2.departure.scheduled).getTime();
+            const arrTime = new Date(leg2.arrival.scheduled).getTime();
+            if (arrTime > depTime) {
+              leg2Duration = (arrTime - depTime) / 1000;
+            }
+          }
+
+          // Calculate layover (minimum 1 hour, estimate based on flight times)
+          const layoverDuration = Math.max(3600, leg2Duration * 0.3); // At least 1 hour or 30% of second leg
+
+          const totalDuration = leg1Duration + layoverDuration + leg2Duration;
+
+          if (totalDuration < bestTotalDuration) {
+            bestTotalDuration = totalDuration;
+            bestConnection = {
+              segments: [
+                {
+                  airline: leg1.airline?.name,
+                  airlineIata: leg1.airline?.iata,
+                  flightNumber: leg1.flight?.iata || leg1.flight?.number,
+                  departureAirport: leg1.departure?.airport || departureAirport.name,
+                  departureIata: leg1.departure?.iata || departureAirport.iata,
+                  arrivalAirport: leg1.arrival?.airport || `${hub} Airport`,
+                  arrivalIata: leg1.arrival?.iata || hub,
+                  scheduledDeparture: leg1.departure?.scheduled,
+                  scheduledArrival: leg1.arrival?.scheduled,
+                  flightStatus: leg1.flight_status,
+                  aircraft: leg1.aircraft?.registration,
+                  duration: leg1Duration,
+                },
+                {
+                  airline: leg2.airline?.name,
+                  airlineIata: leg2.airline?.iata,
+                  flightNumber: leg2.flight?.iata || leg2.flight?.number,
+                  departureAirport: leg2.departure?.airport || `${hub} Airport`,
+                  departureIata: leg2.departure?.iata || hub,
+                  arrivalAirport: leg2.arrival?.airport || arrivalAirport.name,
+                  arrivalIata: leg2.arrival?.iata || arrivalAirport.iata,
+                  scheduledDeparture: leg2.departure?.scheduled,
+                  scheduledArrival: leg2.arrival?.scheduled,
+                  flightStatus: leg2.flight_status,
+                  aircraft: leg2.aircraft?.registration,
+                  duration: leg2Duration,
+                },
+              ],
+              transfers: [{
+                airport: leg1.arrival?.airport || `${hub} Airport`,
+                airportIata: hub,
+                layoverDuration,
+              }],
+              totalDuration,
+            };
+          }
+        } catch (error) {
+          console.warn(`Error checking connection via ${hub}:`, error);
+          continue;
+        }
+      }
+
+      if (bestConnection) {
+        return bestConnection;
+      }
+
+      // Fallback: estimate direct flight
+      const distance = this.calculateGreatCircleDistance(
+        { longitude: departureAirport.lng, latitude: departureAirport.lat },
+        { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+      );
+      const flightSpeedMps = 250;
+      const duration = distance / flightSpeedMps + 3600;
+
+      return {
+        segments: [{
+          departureAirport: departureAirport.name,
+          departureIata: departureAirport.iata,
+          arrivalAirport: arrivalAirport.name,
+          arrivalIata: arrivalAirport.iata,
+          duration,
+        }],
+        transfers: [],
+        totalDuration: duration,
+      };
+    } catch (error) {
+      console.error('Error finding optimal flight route:', error);
+      // Fallback: estimate direct flight
+      const distance = this.calculateGreatCircleDistance(
+        { longitude: departureAirport.lng, latitude: departureAirport.lat },
+        { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+      );
+      const flightSpeedMps = 250;
+      const duration = distance / flightSpeedMps + 3600;
+
+      return {
+        segments: [{
+          departureAirport: departureAirport.name,
+          departureIata: departureAirport.iata,
+          arrivalAirport: arrivalAirport.name,
+          arrivalIata: arrivalAirport.iata,
+          duration,
+        }],
+        transfers: [],
+        totalDuration: duration,
+      };
+    }
+  }
+
+  /**
    * Get flight information from AviationStack API
    * Searches for flights between departure and arrival locations
+   * @deprecated Use findOptimalFlightRoute instead
    */
   private async getFlightInfoFromAviationStack(
     departure: RouteWaypoint,
@@ -280,58 +857,117 @@ export class RoutingService {
 
   /**
    * Find nearest airport to given coordinates using AviationStack API
+   * Searches within a configurable radius (default 200km) for viable commercial airports
    */
   private async findNearestAirport(
     coordinates: { longitude: number; latitude: number },
+    searchRadiusKm: number = 200,
   ): Promise<{ iata: string; name: string; lat: number; lng: number } | null> {
-    try {
-      // AviationStack doesn't have a direct "nearest airport" endpoint
-      // We'll use the airports endpoint and search by country/city
-      // For a production app, you might want to use a dedicated airports database
-      
-      // Try to get airports and find the nearest one
-      const url = `${this.aviationStackApiUrl}/airports?access_key=${this.aviationStackApiKey}&limit=100`;
-      
-      const response = await firstValueFrom(this.httpService.get(url));
-      const data = response.data;
+    // Check cache first
+    const cacheKey = `${coordinates.latitude.toFixed(2)},${coordinates.longitude.toFixed(2)}`;
+    const cached = this.airportCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return cached.airport;
+    }
 
-      if (data.error || !data.data || data.data.length === 0) {
-        // Fallback: use common airport codes based on rough location
-        return this.getFallbackAirport(coordinates);
+    try {
+      const searchRadiusMeters = searchRadiusKm * 1000;
+      
+      // Try to get airports from AviationStack API
+      // Note: AviationStack free tier has limited endpoints, so we'll use pagination
+      let allAirports: any[] = [];
+      let offset = 0;
+      const limit = 100;
+      const maxPages = 5; // Limit to prevent excessive API calls
+
+      for (let page = 0; page < maxPages; page++) {
+        const url = `${this.aviationStackApiUrl}/airports?access_key=${this.aviationStackApiKey}&limit=${limit}&offset=${offset}`;
+        
+        try {
+          const response = await firstValueFrom(this.httpService.get(url));
+          const data = response.data;
+
+          if (data.error || !data.data || data.data.length === 0) {
+            break;
+          }
+
+          allAirports = allAirports.concat(data.data);
+          
+          // If we got fewer results than the limit, we've reached the end
+          if (data.data.length < limit) {
+            break;
+          }
+
+          offset += limit;
+        } catch (error) {
+          console.warn('Error fetching airports page:', error);
+          break;
+        }
       }
 
-      // Find nearest airport from the list
-      let nearestAirport = null;
+      // If no airports from API, use fallback
+      if (allAirports.length === 0) {
+        const fallback = this.getFallbackAirport(coordinates);
+        if (fallback) {
+          this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
+        }
+        return fallback;
+      }
+
+      // Filter and find nearest viable commercial airport within radius
+      let nearestAirport: { iata: string; name: string; lat: number; lng: number } | null = null;
       let minDistance = Infinity;
 
-      for (const airport of data.data) {
+      for (const airport of allAirports) {
         if (!airport.latitude || !airport.longitude || !airport.iata_code) continue;
         
-        const distance = this.calculateGreatCircleDistance(
-          coordinates,
-          { longitude: parseFloat(airport.longitude), latitude: parseFloat(airport.latitude) },
-        );
+        // Skip airports without IATA codes (not commercial)
+        if (!airport.iata_code || airport.iata_code.length !== 3) continue;
+        
+        const airportCoords = {
+          longitude: parseFloat(airport.longitude),
+          latitude: parseFloat(airport.latitude),
+        };
+        
+        const distance = this.calculateGreatCircleDistance(coordinates, airportCoords);
 
-        if (distance < minDistance) {
+        // Only consider airports within search radius
+        if (distance <= searchRadiusMeters && distance < minDistance) {
           minDistance = distance;
           nearestAirport = {
             iata: airport.iata_code,
-            name: airport.airport_name,
+            name: airport.airport_name || airport.name || `${airport.iata_code} Airport`,
             lat: parseFloat(airport.latitude),
             lng: parseFloat(airport.longitude),
           };
         }
       }
 
-      // If no airport found within reasonable distance, use fallback
-      if (!nearestAirport || minDistance > 500000) { // 500km threshold
-        return this.getFallbackAirport(coordinates);
+      // If no airport found within radius, expand search or use fallback
+      if (!nearestAirport) {
+        // Try expanding search to 500km
+        if (searchRadiusKm < 500) {
+          return this.findNearestAirport(coordinates, 500);
+        }
+        // Final fallback
+        const fallback = this.getFallbackAirport(coordinates);
+        if (fallback) {
+          this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
+        }
+        return fallback;
       }
 
+      // Cache the result
+      this.airportCache.set(cacheKey, { airport: nearestAirport, expires: Date.now() + this.airportCacheTTL });
+      
       return nearestAirport;
     } catch (error) {
       console.error('Error finding nearest airport:', error);
-      return this.getFallbackAirport(coordinates);
+      const fallback = this.getFallbackAirport(coordinates);
+      if (fallback) {
+        this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
+      }
+      return fallback;
     }
   }
 

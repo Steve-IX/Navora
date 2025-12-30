@@ -53,13 +53,52 @@ export const DirectionsList: React.FC<DirectionsListProps> = ({
     return iconMap[type.toLowerCase()] || '→';
   };
 
+  const getTransportModeIcon = (mode?: string): string => {
+    const iconMap: Record<string, string> = {
+      walking: '🚶',
+      driving: '🚗',
+      transit: '🚌',
+      flight: '✈️',
+      transfer: '🔄',
+    };
+    return iconMap[mode || ''] || '→';
+  };
+
+  const getTransportModeColor = (mode?: string): string => {
+    const colorMap: Record<string, string> = {
+      walking: 'bg-green-100 text-green-700 border-green-300',
+      driving: 'bg-blue-100 text-blue-700 border-blue-300',
+      transit: 'bg-purple-100 text-purple-700 border-purple-300',
+      flight: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+      transfer: 'bg-orange-100 text-orange-700 border-orange-300',
+    };
+    return colorMap[mode || ''] || 'bg-gray-100 text-gray-700 border-gray-300';
+  };
+
   let stepIndex = 0;
-  const allSteps: { step: any; legIndex: number; globalIndex: number }[] = [];
+  const allSteps: { step: any; legIndex: number; globalIndex: number; leg?: any }[] = [];
   
   route.legs.forEach((leg, legIndex) => {
     leg.steps.forEach((step) => {
-      allSteps.push({ step, legIndex, globalIndex: stepIndex++ });
+      allSteps.push({ step, legIndex, globalIndex: stepIndex++, leg });
     });
+  });
+
+  // Group legs by transport mode for visual separation
+  const legGroups: Array<{ mode?: string; modeLabel?: string; legs: typeof route.legs }> = [];
+  let currentGroup: typeof legGroups[0] | null = null;
+
+  route.legs.forEach((leg) => {
+    if (!currentGroup || currentGroup.mode !== leg.transportMode) {
+      currentGroup = {
+        mode: leg.transportMode,
+        modeLabel: leg.modeLabel,
+        legs: [leg],
+      };
+      legGroups.push(currentGroup);
+    } else {
+      currentGroup.legs.push(leg);
+    }
   });
 
   // Compact mode - show minimal list
@@ -113,7 +152,7 @@ export const DirectionsList: React.FC<DirectionsListProps> = ({
     <div className="p-3">
       {/* Route Summary */}
       <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mb-2">
           <div>
             <div className="text-2xl font-bold text-gray-900">{formatDuration(route.duration)}</div>
             <div className="text-sm text-gray-600">{formatDistance(route.distance)}</div>
@@ -122,23 +161,79 @@ export const DirectionsList: React.FC<DirectionsListProps> = ({
             {allSteps.length} steps
           </div>
         </div>
+        
+        {/* Transport Mode Chain */}
+        {legGroups.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap text-xs">
+            {legGroups.map((group, idx) => (
+              <React.Fragment key={idx}>
+                <span className={`px-2 py-1 rounded ${getTransportModeColor(group.mode)}`}>
+                  {getTransportModeIcon(group.mode)} {group.modeLabel || group.mode || 'Travel'}
+                </span>
+                {idx < legGroups.length - 1 && <span className="text-gray-400">→</span>}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+
+        {/* Flight Info */}
+        {route.flightInfo && (
+          <div className="mt-2 pt-2 border-t border-blue-200">
+            <div className="text-xs text-gray-600">
+              <div className="font-medium">✈️ {route.flightInfo.departureAirport} ({route.flightInfo.departureIata})</div>
+              <div className="text-gray-500">→ {route.flightInfo.arrivalAirport} ({route.flightInfo.arrivalIata})</div>
+              {route.flightInfo.flightNumber && (
+                <div className="text-gray-500 mt-1">
+                  {route.flightInfo.airline} {route.flightInfo.flightNumber}
+                </div>
+              )}
+              {route.flightInfo.transfers && route.flightInfo.transfers.length > 0 && (
+                <div className="text-orange-600 mt-1">
+                  {route.flightInfo.transfers.length} transfer{route.flightInfo.transfers.length > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Steps */}
-      <div className="space-y-1">
-        {allSteps.map(({ step, legIndex, globalIndex }) => {
-          const isSelected = selectedStepIndex === globalIndex;
-          const isExpanded = expandedStep === globalIndex;
-          const isFirst = globalIndex === 0;
-          const isLast = globalIndex === allSteps.length - 1;
+      {/* Steps grouped by transport mode */}
+      <div className="space-y-3">
+        {legGroups.map((group, groupIndex) => {
+          const groupSteps = allSteps.filter(({ legIndex }) => 
+            route.legs[legIndex]?.transportMode === group.mode
+          );
+          const isTransfer = group.mode === 'transfer';
           
           return (
-            <div
-              key={globalIndex}
-              className={`rounded-lg transition-all ${
-                isSelected ? 'bg-blue-100 ring-1 ring-blue-400' : 'hover:bg-gray-100'
-              }`}
-            >
+            <div key={groupIndex} className="space-y-1">
+              {/* Mode separator */}
+              {groupIndex > 0 && (
+                <div className="flex items-center gap-2 my-2">
+                  <div className="flex-1 h-px bg-gray-300"></div>
+                  <div className={`px-3 py-1 rounded-full text-xs font-medium border ${getTransportModeColor(group.mode)}`}>
+                    {getTransportModeIcon(group.mode)} {group.modeLabel || group.mode || 'Continue'}
+                  </div>
+                  <div className="flex-1 h-px bg-gray-300"></div>
+                </div>
+              )}
+
+              {groupSteps.map(({ step, legIndex, globalIndex, leg }) => {
+                const isSelected = selectedStepIndex === globalIndex;
+                const isExpanded = expandedStep === globalIndex;
+                const isFirst = globalIndex === 0;
+                const isLast = globalIndex === allSteps.length - 1;
+                const stepMode = step.transportMode || leg?.transportMode;
+                
+                return (
+                  <div
+                    key={globalIndex}
+                    className={`rounded-lg transition-all ${
+                      isTransfer 
+                        ? isSelected ? 'bg-orange-100 ring-2 ring-orange-400' : 'bg-orange-50 hover:bg-orange-100'
+                        : isSelected ? 'bg-blue-100 ring-1 ring-blue-400' : 'hover:bg-gray-100'
+                    }`}
+                  >
               <button
                 onClick={() => {
                   setExpandedStep(isExpanded ? null : globalIndex);
@@ -148,11 +243,21 @@ export const DirectionsList: React.FC<DirectionsListProps> = ({
               >
                 {/* Step indicator */}
                 <div className="flex-shrink-0 flex flex-col items-center">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-bold ${
-                    isFirst ? 'bg-green-500' : isLast ? 'bg-red-500' : 'bg-blue-500'
-                  }`}>
-                    {getManeuverIcon(step.maneuver.type)}
-                  </div>
+                  {isTransfer ? (
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center bg-orange-500 text-white text-lg">
+                      🔄
+                    </div>
+                  ) : stepMode === 'flight' ? (
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center bg-indigo-500 text-white text-lg">
+                      ✈️
+                    </div>
+                  ) : (
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-bold ${
+                      isFirst ? 'bg-green-500' : isLast ? 'bg-red-500' : stepMode === 'driving' ? 'bg-blue-500' : stepMode === 'walking' ? 'bg-green-500' : 'bg-blue-500'
+                    }`}>
+                      {getManeuverIcon(step.maneuver.type)}
+                    </div>
+                  )}
                 </div>
 
                 {/* Instruction */}
@@ -202,9 +307,30 @@ export const DirectionsList: React.FC<DirectionsListProps> = ({
                         <span className="font-medium">{step.ref}</span>
                       </div>
                     )}
+                    {step.transferInfo && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Transfer at:</span>
+                        <span className="font-medium">{step.transferInfo.airport}</span>
+                      </div>
+                    )}
+                    {step.transferInfo?.layoverDuration && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Layover:</span>
+                        <span className="font-medium">{formatDuration(step.transferInfo.layoverDuration)}</span>
+                      </div>
+                    )}
+                    {stepMode && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Mode:</span>
+                        <span className="font-medium capitalize">{stepMode}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
+            </div>
+                );
+              })}
             </div>
           );
         })}

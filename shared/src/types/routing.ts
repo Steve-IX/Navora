@@ -11,6 +11,8 @@ export interface RouteLeg {
   distance: number; // in meters
   duration: number; // in seconds
   steps: RouteStep[];
+  transportMode?: 'walking' | 'driving' | 'transit' | 'flight' | 'transfer';
+  modeLabel?: string; // e.g., "Walk", "Drive", "Flight AA123", "Transfer at JFK"
 }
 
 export interface RouteStep {
@@ -26,6 +28,11 @@ export interface RouteStep {
   };
   geometry?: {
     coordinates: Coordinates[];
+  };
+  transportMode?: string;
+  transferInfo?: {
+    airport?: string;
+    layoverDuration?: number;
   };
 }
 
@@ -51,6 +58,26 @@ export interface Route {
     scheduledArrival?: string;
     flightStatus?: string;
     aircraft?: string;
+    // Support for multiple flight segments (connecting flights)
+    segments?: Array<{
+      airline?: string;
+      airlineIata?: string;
+      flightNumber?: string;
+      departureAirport?: string;
+      departureIata?: string;
+      arrivalAirport?: string;
+      arrivalIata?: string;
+      scheduledDeparture?: string;
+      scheduledArrival?: string;
+      flightStatus?: string;
+      aircraft?: string;
+    }>;
+    // Transfer/layover information
+    transfers?: Array<{
+      airport?: string;
+      airportIata?: string;
+      layoverDuration?: number; // in seconds
+    }>;
   };
 }
 
