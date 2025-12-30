@@ -3,6 +3,7 @@ import { Place } from '@shared/types/places';
 import { useMapStore } from '@/stores/mapStore';
 import { useRouteStore } from '@/stores/routeStore';
 import { useLocationStore } from '@/stores/locationStore';
+import { useUIStore } from '@/stores/uiStore';
 import { ShareButton } from '../sharing/ShareButton';
 import { placesService } from '@/services/api/places.service';
 import { getPlaceholderImage, getPlaceholderThumbnail } from '@/utils/placeholders';
@@ -16,6 +17,7 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
   const { setCenter, addMarker, removeMarker } = useMapStore();
   const { addWaypoint, clearRoute, setProfile } = useRouteStore();
   const { currentLocation } = useLocationStore();
+  const { setSidePanelOpen, setSidePanelContent } = useUIStore();
   const [detailedPlace, setDetailedPlace] = useState<Place | null>(place);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
@@ -36,6 +38,14 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
   const displayPlace = detailedPlace || place;
 
   const handleGetDirections = () => {
+    // CRITICAL: Close side panel and clear Explore Places content FIRST
+    // This prevents Explore Places from showing when Directions opens
+    setSidePanelOpen(false);
+    setSidePanelContent(null);
+    
+    // Clear selected place to fully close Explore Places context
+    onClose();
+    
     // Center map on place
     setCenter(displayPlace.coordinates);
     
@@ -52,6 +62,10 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
     // Clear existing waypoints and set up route from current location to this place
     clearRoute();
     
+    // Prepare destination name
+    const destinationName = displayPlace.address || displayPlace.name;
+    
+    // Set up waypoints synchronously before opening RoutePlanner
     // Add current location as starting point if available
     if (currentLocation) {
       addWaypoint({
@@ -61,8 +75,6 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
     }
     
     // Add this place as destination
-    // Use address if available for more specificity, otherwise use name
-    const destinationName = displayPlace.address || displayPlace.name;
     addWaypoint({
       coordinates: displayPlace.coordinates,
       name: destinationName,
@@ -71,12 +83,19 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
     // Set default profile to driving
     setProfile('driving');
 
-    // Close the side panel to show the route planner
-    onClose();
-    
-    // Trigger route planner to open by dispatching a custom event
-    // The RoutePlanner component will listen for this event
-    window.dispatchEvent(new CustomEvent('openRoutePlanner'));
+    // Small delay to ensure waypoints are set and UI state is updated
+    setTimeout(() => {
+      // Trigger route planner to open by dispatching a custom event
+      // The RoutePlanner component will listen for this event
+      window.dispatchEvent(new CustomEvent('openRoutePlanner', {
+        detail: {
+          destination: {
+            coordinates: displayPlace.coordinates,
+            name: destinationName,
+          },
+        },
+      }));
+    }, 100);
   };
 
   const renderStars = (rating: number) => {

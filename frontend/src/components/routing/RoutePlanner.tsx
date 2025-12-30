@@ -54,30 +54,57 @@ export const RoutePlanner: React.FC = () => {
 
   // Listen for openRoutePlanner event
   useEffect(() => {
-    const handleOpenRoutePlanner = () => {
+    const handleOpenRoutePlanner = (event?: CustomEvent) => {
       setIsOpen(true);
       programmaticallyOpenedRef.current = true;
+      
       // Clear any existing suggestions
       setFromSuggestions([]);
       setToSuggestions([]);
+      
+      // If event has destination detail, ensure it's set
+      if (event?.detail?.destination) {
+        const dest = event.detail.destination;
+        // Ensure destination waypoint is set
+        if (waypoints.length === 0 || 
+            waypoints[waypoints.length - 1]?.coordinates.latitude !== dest.coordinates.latitude ||
+            waypoints[waypoints.length - 1]?.coordinates.longitude !== dest.coordinates.longitude) {
+          // Destination not in waypoints, add it
+          if (waypoints.length === 0 && currentLocation) {
+            addWaypoint({
+              coordinates: currentLocation,
+              name: 'Current Location',
+            });
+          }
+          addWaypoint({
+            coordinates: dest.coordinates,
+            name: dest.name,
+          });
+        }
+      }
+      
       // Update queries based on waypoints
       if (waypoints.length > 0) {
         setFromQuery(waypoints[0].name || '');
       }
       if (waypoints.length > 1) {
         setToQuery(waypoints[waypoints.length - 1].name || '');
+      } else if (event?.detail?.destination) {
+        // Set destination query if provided in event
+        setToQuery(event.detail.destination.name);
       }
+      
       // Reset flag after a short delay to allow user to type if needed
       setTimeout(() => {
         programmaticallyOpenedRef.current = false;
       }, 1000);
     };
 
-    window.addEventListener('openRoutePlanner', handleOpenRoutePlanner);
+    window.addEventListener('openRoutePlanner', handleOpenRoutePlanner as EventListener);
     return () => {
-      window.removeEventListener('openRoutePlanner', handleOpenRoutePlanner);
+      window.removeEventListener('openRoutePlanner', handleOpenRoutePlanner as EventListener);
     };
-  }, [waypoints]);
+  }, [waypoints, currentLocation, addWaypoint]);
 
   // Track if user has manually set an origin (not GPS)
   const userSetOriginRef = useRef(false);
