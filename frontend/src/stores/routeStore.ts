@@ -8,6 +8,8 @@ interface RouteState {
   selectedRoute: Route | null;
   isLoading: boolean;
   error: string | null;
+  isNavigating: boolean;
+  currentStepIndex: number;
   addWaypoint: (waypoint: RouteWaypoint) => void;
   removeWaypoint: (index: number) => void;
   updateWaypoint: (index: number, waypoint: RouteWaypoint) => void;
@@ -18,6 +20,9 @@ interface RouteState {
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   clearRoute: () => void;
+  startNavigation: () => void;
+  stopNavigation: () => void;
+  setCurrentStepIndex: (index: number) => void;
 }
 
 export const useRouteStore = create<RouteState>((set) => ({
@@ -27,6 +32,8 @@ export const useRouteStore = create<RouteState>((set) => ({
   selectedRoute: null,
   isLoading: false,
   error: null,
+  isNavigating: false,
+  currentStepIndex: 0,
 
   addWaypoint: (waypoint) =>
     set((state) => ({
@@ -54,6 +61,11 @@ export const useRouteStore = create<RouteState>((set) => ({
       selectedRoute: null,
       isLoading: false,
       error: null,
+      isNavigating: false,
+      currentStepIndex: 0,
     }),
+  startNavigation: () => set({ isNavigating: true, currentStepIndex: 0 }),
+  stopNavigation: () => set({ isNavigating: false, currentStepIndex: 0 }),
+  setCurrentStepIndex: (index) => set({ currentStepIndex: index }),
 }));
 

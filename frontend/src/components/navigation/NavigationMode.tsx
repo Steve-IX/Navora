@@ -1,43 +1,138 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Route } from '@shared/types/routing';
 import { DirectionsList } from './DirectionsList';
 import { useMapStore } from '@/stores/mapStore';
+import { useLocationStore } from '@/stores/locationStore';
+import { useRouteStore } from '@/stores/routeStore';
+import { Coordinates } from '@shared/types/geocoding';
 
 interface NavigationModeProps {
   route: Route;
   onExit: () => void;
 }
 
+/**
+ * Calculate distance between two coordinates (Haversine formula)
+ */
+function calculateDistance(
+  point1: Coordinates,
+  point2: Coordinates,
+): number {
+  const R = 6371000; // Earth radius in meters
+  const φ1 = (point1.latitude * Math.PI) / 180;
+  const φ2 = (point2.latitude * Math.PI) / 180;
+  const Δφ = ((point2.latitude - point1.latitude) * Math.PI) / 180;
+  const Δλ = ((point2.longitude - point1.longitude) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
 export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit }) => {
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [showAllSteps, setShowAllSteps] = useState(false);
+  const [distanceToNextTurn, setDistanceToNextTurn] = useState<number | null>(null);
   const { setCenter, setZoom } = useMapStore();
+  const { currentLocation, isTracking, setCurrentLocation, setIsTracking } = useLocationStore();
+  const { currentStepIndex, setCurrentStepIndex } = useRouteStore();
+  const locationWatchId = useRef<number | null>(null);
+  const stepCheckInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Calculate total steps
   const totalSteps = route.legs.reduce((sum, leg) => sum + leg.steps.length, 0);
 
-  // Get current step
-  let stepCount = 0;
-  let currentStep: { step: any; legIndex: number } | null = null;
-  for (let legIndex = 0; legIndex < route.legs.length; legIndex++) {
-    const leg = route.legs[legIndex];
-    for (let stepIndex = 0; stepIndex < leg.steps.length; stepIndex++) {
-      if (stepCount === currentStepIndex) {
-        currentStep = { step: leg.steps[stepIndex], legIndex };
-        break;
-      }
-      stepCount++;
-    }
-    if (currentStep) break;
-  }
+  // Get all steps in a flat array
+  const getAllSteps = () => {
+    const allSteps: Array<{ step: any; legIndex: number; globalIndex: number }> = [];
+    let globalIndex = 0;
+    route.legs.forEach((leg, legIndex) => {
+      leg.steps.forEach((step) => {
+        allSteps.push({ step, legIndex, globalIndex: globalIndex++ });
+      });
+    });
+    return allSteps;
+  };
 
-  // Auto-center on current step
+  const allSteps = getAllSteps();
+  const currentStep = allSteps[currentStepIndex] || null;
+  const nextStep = currentStepIndex < allSteps.length - 1 ? allSteps[currentStepIndex + 1] : null;
+
+  // Start location tracking when navigation begins
   useEffect(() => {
-    if (currentStep?.step?.maneuver?.location) {
-      setCenter(currentStep.step.maneuver.location);
-      setZoom(16);
+    if (!isTracking && navigator.geolocation) {
+      setIsTracking(true);
+      locationWatchId.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const newLocation: Coordinates = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+          setCurrentLocation(newLocation);
+          setCenter(newLocation);
+          setZoom(17); // Close zoom for navigation
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 5000,
+        }
+      );
     }
-  }, [currentStepIndex]);
+
+    return () => {
+      if (locationWatchId.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(locationWatchId.current);
+      }
+    };
+  }, [isTracking, setCurrentLocation, setCenter, setZoom, setIsTracking]);
+
+  // Calculate distance to next turn and auto-advance steps
+  useEffect(() => {
+    if (!currentLocation || !currentStep) return;
+
+    const updateDistanceAndCheckProximity = () => {
+      if (!currentLocation || !currentStep) return;
+
+      // Calculate distance to current step's maneuver point
+      const stepLocation = currentStep.step.maneuver.location;
+      const distance = calculateDistance(currentLocation, stepLocation);
+      setDistanceToNextTurn(distance);
+
+      // Auto-advance if user is within 30 meters of the step's maneuver point
+      // or if they've completed more than 80% of the step's distance
+      if (distance < 30 || (currentStep.step.distance > 0 && distance < currentStep.step.distance * 0.2)) {
+        if (currentStepIndex < totalSteps - 1) {
+          setCurrentStepIndex(currentStepIndex + 1);
+        }
+      }
+    };
+
+    // Update immediately
+    updateDistanceAndCheckProximity();
+
+    // Check every 2 seconds
+    stepCheckInterval.current = setInterval(updateDistanceAndCheckProximity, 2000);
+
+    return () => {
+      if (stepCheckInterval.current) {
+        clearInterval(stepCheckInterval.current);
+      }
+    };
+  }, [currentLocation, currentStep, currentStepIndex, totalSteps, setCurrentStepIndex]);
+
+  // Center map on user location when it updates
+  useEffect(() => {
+    if (currentLocation) {
+      setCenter(currentLocation);
+      setZoom(17);
+    }
+  }, [currentLocation, setCenter, setZoom]);
 
   const handleNextStep = () => {
     if (currentStepIndex < totalSteps - 1) {
@@ -97,12 +192,20 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
     );
   }
 
+  // Calculate remaining distance and time
+  let remainingDistance = 0;
+  let remainingDuration = 0;
+  for (let i = currentStepIndex; i < allSteps.length; i++) {
+    remainingDistance += allSteps[i].step.distance;
+    remainingDuration += allSteps[i].step.duration;
+  }
+
   return (
     <>
-      {/* Top Navigation Bar - Fixed at top */}
+      {/* Top Navigation Bar - Fixed at top, Google Maps style */}
       <div className="fixed top-0 left-0 right-0 z-50 pointer-events-auto">
         <div className="bg-gradient-to-b from-blue-600 to-blue-700 text-white shadow-lg">
-      {/* Header */}
+          {/* Header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-blue-500/30">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-lg">
@@ -111,64 +214,71 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
               <div>
                 <div className="text-xs opacity-80">Navigating</div>
                 <div className="text-sm font-medium">
-                  {formatDistance(route.distance)} · {formatDuration(route.duration)}
+                  {formatDistance(remainingDistance)} · {formatDuration(remainingDuration)}
                 </div>
               </div>
             </div>
-          <button
-            onClick={onExit}
+            <button
+              onClick={onExit}
               className="p-2 hover:bg-white/10 rounded-full transition-colors"
-            aria-label="Exit navigation"
-          >
+              aria-label="Exit navigation"
+            >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-      </div>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
-          {/* Current Instruction */}
-      {currentStep && (
-            <div className="px-4 py-3">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white text-blue-600 rounded-xl flex items-center justify-center text-2xl font-bold shadow-lg">
+          {/* Current Instruction - Prominent display */}
+          {currentStep && (
+            <div className="px-4 py-4 bg-blue-700/50">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-white text-blue-600 rounded-2xl flex items-center justify-center text-3xl font-bold shadow-xl flex-shrink-0">
                   {getManeuverIcon(currentStep.step.maneuver.type)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-lg font-semibold truncate">
-                {currentStep.step.instruction}
-              </div>
-                  <div className="text-sm opacity-80">
-                    {formatDistance(currentStep.step.distance)} · {formatDuration(currentStep.step.duration)}
+                  <div className="text-xl font-bold mb-1 truncate">
+                    {currentStep.step.instruction}
+                  </div>
+                  {distanceToNextTurn !== null && (
+                    <div className="text-lg font-semibold opacity-90">
+                      {formatDistance(distanceToNextTurn)}
+                    </div>
+                  )}
+                  {nextStep && (
+                    <div className="text-sm opacity-75 mt-1">
+                      Then: {nextStep.step.instruction}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-          {/* Step Controls */}
+          {/* Step Progress Indicator */}
           <div className="flex items-center justify-between px-4 py-2 bg-blue-800/30">
-          <button
-            onClick={handlePreviousStep}
-            disabled={currentStepIndex === 0}
+            <button
+              onClick={handlePreviousStep}
+              disabled={currentStepIndex === 0}
               className="px-3 py-1.5 text-sm bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
+            >
               ← Previous
-          </button>
-            <div className="text-sm">
+            </button>
+            <div className="text-sm font-medium">
               Step {currentStepIndex + 1} of {totalSteps}
             </div>
-          <button
-            onClick={handleNextStep}
-            disabled={currentStepIndex >= totalSteps - 1}
+            <button
+              onClick={handleNextStep}
+              disabled={currentStepIndex >= totalSteps - 1}
               className="px-3 py-1.5 text-sm bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
+            >
               Next →
-          </button>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Bottom Steps Panel */}
+      {/* Bottom Steps Panel - Collapsible */}
       <div className="fixed bottom-0 left-0 right-0 z-50 pointer-events-auto">
         <div className="bg-white rounded-t-2xl shadow-2xl border-t border-gray-200 max-h-[40vh] overflow-hidden flex flex-col">
           {/* Toggle Header */}
@@ -192,10 +302,10 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
           {/* Steps List */}
           {showAllSteps && (
             <div className="overflow-y-auto flex-1">
-        <DirectionsList
-          route={route}
-          selectedStepIndex={currentStepIndex}
-          onStepSelect={setCurrentStepIndex}
+              <DirectionsList
+                route={route}
+                selectedStepIndex={currentStepIndex}
+                onStepSelect={setCurrentStepIndex}
                 compact
               />
             </div>

@@ -5,6 +5,7 @@ import { useMapStore } from '@/stores/mapStore';
 import { useLocationStore } from '@/stores/locationStore';
 import { RoutingProfile } from '@shared/types/routing';
 import { geocodingService } from '@/services/api/geocoding.service';
+import { NavigationMode } from '@/components/navigation/NavigationMode';
 
 // Icon components
 const XIcon = () => (
@@ -72,6 +73,7 @@ export const RoutePlanner: React.FC = () => {
     selectedRoute,
     isLoading,
     error,
+    isNavigating,
     addWaypoint,
     removeWaypoint,
     setProfile,
@@ -80,6 +82,8 @@ export const RoutePlanner: React.FC = () => {
     setIsLoading,
     setError,
     clearRoute,
+    startNavigation,
+    stopNavigation,
   } = useRouteStore();
 
   const { addRoute, clearRoutes, setCenter } = useMapStore();
@@ -162,11 +166,11 @@ export const RoutePlanner: React.FC = () => {
         geocodingService.autocomplete(value).then((results) => {
           setFromSuggestions(results);
         }).catch(() => {
-          setFromSuggestions([]);
+      setFromSuggestions([]);
         });
-      } else {
-        setFromSuggestions([]);
-      }
+    } else {
+      setFromSuggestions([]);
+    }
     }, 300);
   };
 
@@ -187,9 +191,9 @@ export const RoutePlanner: React.FC = () => {
         }).catch(() => {
           setToSuggestions([]);
         });
-      } else {
-        setToSuggestions([]);
-      }
+    } else {
+      setToSuggestions([]);
+    }
     }, 300);
   };
 
@@ -321,6 +325,11 @@ export const RoutePlanner: React.FC = () => {
     : 'w-0';
   const contentOpacity = isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none';
 
+    // Show NavigationMode when navigating
+  if (isNavigating && selectedRoute) {
+    return <NavigationMode route={selectedRoute} onExit={stopNavigation} />;
+  }
+
   return (
     <>
       {/* Floating Action Button - Directions */}
@@ -390,7 +399,7 @@ export const RoutePlanner: React.FC = () => {
                           coordinates: currentLocation,
                           name: 'Current Location',
                         });
-                        setFromQuery('Current Location');
+                      setFromQuery('Current Location');
                       }
                     }}
                     className="p-1 hover:bg-gray-100 rounded transition-colors"
@@ -405,7 +414,7 @@ export const RoutePlanner: React.FC = () => {
               {showFromSuggestions && fromSuggestions.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                   {fromSuggestions.map((suggestion, index) => (
-                    <button
+                      <button
                       key={index}
                       onClick={() => handleFromSuggestionSelect(suggestion)}
                       className="w-full text-left p-3 hover:bg-gray-50 flex items-start gap-3 transition-colors"
@@ -414,10 +423,10 @@ export const RoutePlanner: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm truncate">{suggestion.placeName}</div>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+                      </button>
+                    ))}
+                  </div>
+                )}
             </div>
 
             {/* Destination Input */}
@@ -439,7 +448,7 @@ export const RoutePlanner: React.FC = () => {
               {showToSuggestions && toSuggestions.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                   {toSuggestions.map((suggestion, index) => (
-                    <button
+                      <button
                       key={index}
                       onClick={() => handleToSuggestionSelect(suggestion)}
                       className="w-full text-left p-3 hover:bg-gray-50 flex items-start gap-3 transition-colors"
@@ -448,10 +457,10 @@ export const RoutePlanner: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm truncate">{suggestion.placeName}</div>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+                      </button>
+                    ))}
+                  </div>
+                )}
             </div>
 
             {/* Transport Mode Selection */}
@@ -493,28 +502,32 @@ export const RoutePlanner: React.FC = () => {
               <div className="space-y-4 pt-4 border-t border-gray-200">
                 {/* Route Summary */}
                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3">
                     <div className="text-3xl">
                       {getTransportIcon(selectedProfile)}
                     </div>
-                    <div>
+                  <div>
                       <div className="font-semibold text-xl text-gray-900">{formatDuration(selectedRoute.duration)}</div>
                       <div className="text-sm text-gray-600">{formatDistance(selectedRoute.distance)}</div>
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button 
+                  <button
                       className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors shadow-sm"
-                      onClick={() => {/* TODO: Start navigation */}}
-                    >
-                      Start
-                    </button>
-                    <button 
+                      onClick={() => {
+                        if (selectedRoute) {
+                          startNavigation();
+                        }
+                      }}
+                  >
+                    Start
+                  </button>
+                  <button
                       className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition-colors"
                       onClick={() => setShowSteps(!showSteps)}
-                    >
+                  >
                       {showSteps ? 'Hide' : 'Steps'}
-                    </button>
+                  </button>
                   </div>
                 </div>
 
@@ -529,8 +542,8 @@ export const RoutePlanner: React.FC = () => {
                       <div>
                         <span className="font-medium">Arrival:</span> {selectedRoute.flightInfo.arrivalAirport} ({selectedRoute.flightInfo.arrivalIata})
                       </div>
-                    </div>
-                  </div>
+                </div>
+              </div>
                 )}
 
                 {/* Journey Breakdown */}
@@ -539,7 +552,7 @@ export const RoutePlanner: React.FC = () => {
                     <div className="font-medium text-gray-900 mb-2">Journey Breakdown</div>
                     {selectedRoute.legs.map((leg, index) => (
                       <div 
-                        key={index} 
+                        key={index}
                         className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100 cursor-pointer"
                         onClick={() => {
                           // Scroll to this leg on the map (if implemented)
@@ -564,8 +577,8 @@ export const RoutePlanner: React.FC = () => {
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
+                </div>
+              )}
 
                 {/* Detailed Steps (Expandable) */}
                 {showSteps && selectedRoute.legs && selectedRoute.legs.length > 0 && (
@@ -586,13 +599,13 @@ export const RoutePlanner: React.FC = () => {
                             </div>
                           </div>
                         ))}
-                      </div>
-                    ))}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+                    ))}
+                </div>
+              )}
+                </div>
+              )}
+            </div>
         </div>
       </div>
     </>
