@@ -174,9 +174,21 @@ export class RoutingService {
     );
     if (toAirport) {
       legs.push({
-        ...toAirport,
+        distance: toAirport.distance,
+        duration: toAirport.duration,
+        geometry: toAirport.geometry,
         transportMode: 'driving', // Keep as driving for now, can be enhanced later
         modeLabel: `Travel to ${depAirport.name} (${depAirport.iata})`, // Changed from "Drive" to "Travel"
+        steps: [{
+          distance: toAirport.distance,
+          duration: toAirport.duration,
+          instruction: `Travel to ${depAirport.name} (${depAirport.iata})`,
+          maneuver: {
+            type: 'depart',
+            location: origin.coordinates,
+          },
+          transportMode: 'driving',
+        }],
       });
       totalDistance += toAirport.distance;
       totalDuration += toAirport.duration;
@@ -223,9 +235,21 @@ export class RoutingService {
     );
     if (fromAirport) {
       legs.push({
-        ...fromAirport,
+        distance: fromAirport.distance,
+        duration: fromAirport.duration,
+        geometry: fromAirport.geometry,
         transportMode: 'driving', // Keep as driving for now, can be enhanced later
         modeLabel: `Travel from ${arrAirport.name} (${arrAirport.iata}) to destination`, // Changed from "Drive" to "Travel"
+        steps: [{
+          distance: fromAirport.distance,
+          duration: fromAirport.duration,
+          instruction: `Travel from ${arrAirport.name} (${arrAirport.iata}) to destination`,
+          maneuver: {
+            type: 'arrive',
+            location: destination.coordinates,
+          },
+          transportMode: 'driving',
+        }],
       });
       totalDistance += fromAirport.distance;
       totalDuration += fromAirport.duration;

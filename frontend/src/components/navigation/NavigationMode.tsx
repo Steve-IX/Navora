@@ -41,17 +41,29 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
   const locationWatchId = useRef<number | null>(null);
   const stepCheckInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // Calculate total steps
-  const totalSteps = route.legs.reduce((sum, leg) => sum + leg.steps.length, 0);
+  // Check if this is a flight route first
+  const isFlightRoute = route.flightInfo !== undefined;
 
-  // Get all steps in a flat array
+  // Calculate total steps - safely handle missing legs or steps
+  const totalSteps = route.legs && Array.isArray(route.legs)
+    ? route.legs.reduce((sum, leg) => {
+        return sum + (leg?.steps && Array.isArray(leg.steps) ? leg.steps.length : 0);
+      }, 0)
+    : 0;
+
+  // Get all steps in a flat array - safely handle missing data
   const getAllSteps = () => {
     const allSteps: Array<{ step: any; legIndex: number; globalIndex: number }> = [];
+    if (!route.legs || !Array.isArray(route.legs)) {
+      return allSteps;
+    }
     let globalIndex = 0;
     route.legs.forEach((leg, legIndex) => {
-      leg.steps.forEach((step) => {
-        allSteps.push({ step, legIndex, globalIndex: globalIndex++ });
-      });
+      if (leg && leg.steps && Array.isArray(leg.steps)) {
+        leg.steps.forEach((step) => {
+          allSteps.push({ step, legIndex, globalIndex: globalIndex++ });
+        });
+      }
     });
     return allSteps;
   };
@@ -59,6 +71,14 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
   const allSteps = getAllSteps();
   const currentStep = allSteps[currentStepIndex] || null;
   const nextStep = currentStepIndex < allSteps.length - 1 ? allSteps[currentStepIndex + 1] : null;
+
+  // Center map on current step when step index changes (for Next/Previous navigation)
+  useEffect(() => {
+    if (currentStep?.step?.maneuver?.location) {
+      setCenter(currentStep.step.maneuver.location);
+      setZoom(16); // Good zoom level for viewing step location
+    }
+  }, [currentStepIndex, currentStep, setCenter, setZoom]);
 
   // Start location tracking when navigation begins
   useEffect(() => {
@@ -126,23 +146,43 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
     };
   }, [currentLocation, currentStep, currentStepIndex, totalSteps, setCurrentStepIndex]);
 
-  // Center map on user location when it updates
+  // Center map on user location when it updates (only if we have a current location and not manually navigating steps)
   useEffect(() => {
-    if (currentLocation) {
-      setCenter(currentLocation);
-      setZoom(17);
+    // Only auto-center on user location if we're actively tracking and not manually viewing a step
+    // This prevents conflicts when user clicks Next/Previous
+    if (currentLocation && isTracking) {
+      // Small delay to allow step-based centering to take precedence
+      const timer = setTimeout(() => {
+        setCenter(currentLocation);
+        setZoom(17);
+      }, 100);
+      return () => clearTimeout(timer);
     }
-  }, [currentLocation, setCenter, setZoom]);
+  }, [currentLocation, isTracking, setCenter, setZoom]);
 
   const handleNextStep = () => {
     if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(currentStepIndex + 1);
+      const nextIndex = currentStepIndex + 1;
+      setCurrentStepIndex(nextIndex);
+      // Center map on next step's location
+      const nextStepData = allSteps[nextIndex];
+      if (nextStepData?.step?.maneuver?.location) {
+        setCenter(nextStepData.step.maneuver.location);
+        setZoom(16);
+      }
     }
   };
 
   const handlePreviousStep = () => {
     if (currentStepIndex > 0) {
-      setCurrentStepIndex(currentStepIndex - 1);
+      const prevIndex = currentStepIndex - 1;
+      setCurrentStepIndex(prevIndex);
+      // Center map on previous step's location
+      const prevStepData = allSteps[prevIndex];
+      if (prevStepData?.step?.maneuver?.location) {
+        setCenter(prevStepData.step.maneuver.location);
+        setZoom(16);
+      }
     }
   };
 
@@ -182,9 +222,6 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
     };
     return iconMap[type.toLowerCase()] || '→';
   };
-
-  // Check if this is a flight route
-  const isFlightRoute = route.flightInfo !== undefined;
 
   if (isFlightRoute) {
     return (
