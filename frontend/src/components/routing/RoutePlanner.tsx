@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouteStore } from '@/stores/routeStore';
 import { routingService } from '@/services/api/routing.service';
 import { useMapStore } from '@/stores/mapStore';
@@ -49,10 +49,17 @@ export const RoutePlanner: React.FC = () => {
   const { setBottomSheetOpen, setBottomSheetContent } = useUIStore();
   const { currentLocation } = useLocationStore();
 
+  // Track if route planner was opened programmatically to suppress autocomplete
+  const programmaticallyOpenedRef = useRef(false);
+
   // Listen for openRoutePlanner event
   useEffect(() => {
     const handleOpenRoutePlanner = () => {
       setIsOpen(true);
+      programmaticallyOpenedRef.current = true;
+      // Clear any existing suggestions
+      setFromSuggestions([]);
+      setToSuggestions([]);
       // Update queries based on waypoints
       if (waypoints.length > 0) {
         setFromQuery(waypoints[0].name || '');
@@ -60,6 +67,10 @@ export const RoutePlanner: React.FC = () => {
       if (waypoints.length > 1) {
         setToQuery(waypoints[waypoints.length - 1].name || '');
       }
+      // Reset flag after a short delay to allow user to type if needed
+      setTimeout(() => {
+        programmaticallyOpenedRef.current = false;
+      }, 1000);
     };
 
     window.addEventListener('openRoutePlanner', handleOpenRoutePlanner);
@@ -113,6 +124,11 @@ export const RoutePlanner: React.FC = () => {
   }, [waypoints.length]); // Only depend on length to avoid infinite loops
 
   useEffect(() => {
+    // Don't show autocomplete if route planner was just opened programmatically
+    if (programmaticallyOpenedRef.current) {
+      setFromSuggestions([]);
+      return;
+    }
     if (fromQuery.length >= 2 && fromQuery !== 'Current Location') {
       geocodingService.autocomplete(fromQuery).then(setFromSuggestions).catch(console.error);
     } else {
@@ -121,6 +137,11 @@ export const RoutePlanner: React.FC = () => {
   }, [fromQuery]);
 
   useEffect(() => {
+    // Don't show autocomplete if route planner was just opened programmatically
+    if (programmaticallyOpenedRef.current) {
+      setToSuggestions([]);
+      return;
+    }
     if (toQuery.length >= 2) {
       geocodingService.autocomplete(toQuery).then(setToSuggestions).catch(console.error);
     } else {

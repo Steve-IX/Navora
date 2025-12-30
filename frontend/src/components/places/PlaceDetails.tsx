@@ -61,9 +61,11 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
     }
     
     // Add this place as destination
+    // Use address if available for more specificity, otherwise use name
+    const destinationName = displayPlace.address || displayPlace.name;
     addWaypoint({
       coordinates: displayPlace.coordinates,
-      name: displayPlace.name,
+      name: destinationName,
     });
 
     // Set default profile to driving
