@@ -209,10 +209,12 @@ function App() {
 
   return (
     <div className="w-full h-full relative">
+      {/* Route Planner - Persistent Left Sidebar */}
+      <RoutePlanner />
+      
       <MapView onMapClick={handleMapClick} onPoiClick={handlePoiClick}>
         <LayerControl />
         <SearchBar />
-        <RoutePlanner />
         <GPSIndicator />
         
         {/* Floating Action Buttons */}
