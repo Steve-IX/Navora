@@ -73,17 +73,17 @@ export class RoutingService {
       steps?: boolean;
     },
   ): Promise<RoutingResponse> {
-    const mapboxProfile = this.mapProfileToMapbox(profile);
-    const coordinates = waypoints
-      .map((wp) => `${wp.coordinates.longitude},${wp.coordinates.latitude}`)
-      .join(';');
+      const mapboxProfile = this.mapProfileToMapbox(profile);
+      const coordinates = waypoints
+        .map((wp) => `${wp.coordinates.longitude},${wp.coordinates.latitude}`)
+        .join(';');
 
-    const alternatives = options?.alternatives ? 'true' : 'false';
-    const geometries = options?.geometries || 'geojson';
-    const overview = options?.overview || 'full';
-    const steps = options?.steps !== false ? 'true' : 'false';
+      const alternatives = options?.alternatives ? 'true' : 'false';
+      const geometries = options?.geometries || 'geojson';
+      const overview = options?.overview || 'full';
+      const steps = options?.steps !== false ? 'true' : 'false';
 
-    const url = `${this.mapboxApiUrl}/mapbox/${mapboxProfile}/${coordinates}?access_token=${this.mapboxAccessToken}&alternatives=${alternatives}&geometries=${geometries}&overview=${overview}&steps=${steps}`;
+      const url = `${this.mapboxApiUrl}/mapbox/${mapboxProfile}/${coordinates}?access_token=${this.mapboxAccessToken}&alternatives=${alternatives}&geometries=${geometries}&overview=${overview}&steps=${steps}`;
 
     try {
       const response = await firstValueFrom(this.httpService.get(url));
@@ -108,25 +108,50 @@ export class RoutingService {
     const originCountry = await this.getCountry(origin.coordinates);
     const destCountry = await this.getCountry(destination.coordinates);
 
-    // Validate distance
-    const distance = this.calculateDistance(origin.coordinates, destination.coordinates);
-    if (distance < 100000) {
-      throw new HttpException(
-        'Origin and destination are too close for flight routing. Please use ground transport.',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+      // Validate distance (300km minimum for flights - aligns with Google Maps)
+      const distance = this.calculateDistance(origin.coordinates, destination.coordinates);
+      if (distance < 300000) {
+        throw new HttpException(
+          'Origin and destination are too close for flight routing. Please use ground transport.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
-    // Find airports in same countries
-    const depAirport = await this.findAirportInCountry(origin.coordinates, originCountry);
-    const arrAirport = await this.findAirportInCountry(destination.coordinates, destCountry);
+      // Find airports in same countries
+      const depAirport = await this.findAirportInCountry(origin.coordinates, originCountry);
+      const arrAirport = await this.findAirportInCountry(destination.coordinates, destCountry);
 
-    if (!depAirport || !arrAirport) {
-      throw new HttpException(
-        'Could not find suitable airports. Please select locations closer to airports.',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+      // CRITICAL: Fail fast if airports cannot be found - never guess
+      if (!depAirport || !arrAirport) {
+        throw new HttpException(
+          'Could not find suitable airports near the selected locations. Please select locations closer to airports.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // CRITICAL: Validate origin to departure airport distance (prevent insane pre-flight travel)
+      const depToOrigin = this.calculateDistance(origin.coordinates, {
+        longitude: depAirport.lng,
+        latitude: depAirport.lat,
+      });
+      if (depToOrigin > 500000) {
+        throw new HttpException(
+          'Departure airport is too far from origin. Please select a location closer to an airport.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // CRITICAL: Validate destination to arrival airport distance
+      const arrToDest = this.calculateDistance(destination.coordinates, {
+        longitude: arrAirport.lng,
+        latitude: arrAirport.lat,
+      });
+      if (arrToDest > 500000) {
+        throw new HttpException(
+          'Arrival airport is too far from destination. Please select a location closer to an airport.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
     // Validate airports are different
     if (depAirport.iata === arrAirport.iata) {
@@ -150,8 +175,8 @@ export class RoutingService {
     if (toAirport) {
       legs.push({
         ...toAirport,
-        transportMode: 'driving',
-        modeLabel: `Drive to ${depAirport.name} (${depAirport.iata})`,
+        transportMode: 'driving', // Keep as driving for now, can be enhanced later
+        modeLabel: `Travel to ${depAirport.name} (${depAirport.iata})`, // Changed from "Drive" to "Travel"
       });
       totalDistance += toAirport.distance;
       totalDuration += toAirport.duration;
@@ -199,8 +224,8 @@ export class RoutingService {
     if (fromAirport) {
       legs.push({
         ...fromAirport,
-        transportMode: 'driving',
-        modeLabel: `Drive from ${arrAirport.name} (${arrAirport.iata}) to destination`,
+        transportMode: 'driving', // Keep as driving for now, can be enhanced later
+        modeLabel: `Travel from ${arrAirport.name} (${arrAirport.iata}) to destination`, // Changed from "Drive" to "Travel"
       });
       totalDistance += fromAirport.distance;
       totalDuration += fromAirport.duration;
@@ -305,31 +330,11 @@ export class RoutingService {
       }
     }
 
-    // Fallback: use global major airports
-    const globalAirports = [
-      { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781 },
-      { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543 },
-      { iata: 'CDG', name: 'Paris Charles de Gaulle', lat: 49.0097, lng: 2.5479 },
-      { iata: 'FRA', name: 'Frankfurt Airport', lat: 50.0379, lng: 8.5622 },
-      { iata: 'DXB', name: 'Dubai International', lat: 25.2532, lng: 55.3657 },
-      { iata: 'HND', name: 'Tokyo Haneda', lat: 35.5494, lng: 139.7798 },
-      { iata: 'SIN', name: 'Singapore Changi', lat: 1.3644, lng: 103.9915 },
-    ];
-
-    let closest = globalAirports[0];
-    let minDist = Infinity;
-    for (const airport of globalAirports) {
-      const dist = this.calculateDistance(
-        coordinates,
-        { longitude: airport.lng, latitude: airport.lat },
-      );
-      if (dist < minDist) {
-        minDist = dist;
-        closest = airport;
-      }
-    }
-
-    return closest;
+    // CRITICAL FIX: Remove dangerous global fallback
+    // Google Maps never silently jumps continents - we must fail fast
+    // If we can't find a nearby airport in the same country, return null
+    // This will trigger proper error handling upstream
+    return null;
   }
 
   /**
@@ -376,13 +381,17 @@ export class RoutingService {
 
   /**
    * Get country code from coordinates
+   * FIXED: Explicitly search for country context instead of assuming it's last
    */
   private async getCountry(coordinates: { longitude: number; latitude: number }): Promise<string | null> {
     try {
       const results = await this.geocodingService.reverseGeocode(coordinates, 1);
       if (results && results.length > 0 && results[0].context) {
-        const countryContext = results[0].context[results[0].context.length - 1];
-        return countryContext.shortCode || null;
+        // Search explicitly for country context (Mapbox doesn't guarantee order)
+        const country = results[0].context.find((c: any) =>
+          c.id?.startsWith('country'),
+        );
+        return country?.shortCode?.toLowerCase() || null;
       }
     } catch (error) {
       console.warn('Failed to get country:', error);
@@ -438,25 +447,25 @@ export class RoutingService {
       const lat2 = (to.latitude * Math.PI) / 180;
       const lon1 = (from.longitude * Math.PI) / 180;
       const lon2 = (to.longitude * Math.PI) / 180;
-      
-      const d = Math.acos(
-        Math.sin(lat1) * Math.sin(lat2) +
+
+    const d = Math.acos(
+      Math.sin(lat1) * Math.sin(lat2) +
         Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1),
-      );
-      
-      const a = Math.sin((1 - fraction) * d) / Math.sin(d);
-      const b = Math.sin(fraction * d) / Math.sin(d);
-      
+    );
+
+    const a = Math.sin((1 - fraction) * d) / Math.sin(d);
+    const b = Math.sin(fraction * d) / Math.sin(d);
+
       const x = a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
       const y = a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
-      const z = a * Math.sin(lat1) + b * Math.sin(lat2);
-      
-      const lat = Math.atan2(z, Math.sqrt(x * x + y * y));
-      const lon = Math.atan2(y, x);
-      
+    const z = a * Math.sin(lat1) + b * Math.sin(lat2);
+
+    const lat = Math.atan2(z, Math.sqrt(x * x + y * y));
+    const lon = Math.atan2(y, x);
+
       points.push({
-        latitude: (lat * 180) / Math.PI,
-        longitude: (lon * 180) / Math.PI,
+      latitude: (lat * 180) / Math.PI,
+      longitude: (lon * 180) / Math.PI,
       });
     }
     
@@ -529,7 +538,7 @@ export class RoutingService {
               latitude: step.maneuver?.location?.[1] || 0,
             },
           },
-        })),
+                })),
       })),
       weight: route.weight || route.duration,
       weightName: 'duration',
