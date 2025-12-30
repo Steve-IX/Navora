@@ -5,7 +5,25 @@ import { useMapStore } from '@/stores/mapStore';
 import { useLocationStore } from '@/stores/locationStore';
 import { RoutingProfile } from '@shared/types/routing';
 import { geocodingService } from '@/services/api/geocoding.service';
-import { X, MapPin, Navigation } from 'lucide-react';
+// Simple icon components to avoid external dependency
+const XIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const MapPinIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+const NavigationIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+  </svg>
+);
 
 const TRANSPORT_MODES: { value: RoutingProfile; icon: string; label: string }[] = [
   { value: 'driving', icon: '🚗', label: 'Drive' },
@@ -31,7 +49,6 @@ export const RoutePlanner: React.FC = () => {
   const {
     waypoints,
     selectedProfile,
-    routes,
     selectedRoute,
     isLoading,
     error,
@@ -167,7 +184,7 @@ export const RoutePlanner: React.FC = () => {
     addWaypoint({
       coordinates: suggestion.coordinates,
       name: suggestion.placeName,
-    }, 0);
+    });
   };
 
   const handleToSuggestionSelect = (suggestion: any) => {
@@ -267,7 +284,7 @@ export const RoutePlanner: React.FC = () => {
             onClick={() => setIsOpen(false)}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <X className="w-5 h-5" />
+            <XIcon />
           </button>
         </div>
 
@@ -295,14 +312,14 @@ export const RoutePlanner: React.FC = () => {
                       addWaypoint({
                         coordinates: currentLocation,
                         name: 'Current Location',
-                      }, 0);
+                      });
                       setFromQuery('Current Location');
                     }
                   }}
                   className="p-1 hover:bg-gray-100 rounded"
                   title="Use current location"
                 >
-                  <Navigation className="w-4 h-4 text-blue-500" />
+                  <NavigationIcon />
                 </button>
               )}
             </div>
@@ -316,7 +333,7 @@ export const RoutePlanner: React.FC = () => {
                     onClick={() => handleFromSuggestionSelect(suggestion)}
                     className="w-full text-left p-3 hover:bg-gray-50 flex items-start gap-3"
                   >
-                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <MapPinIcon />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">{suggestion.placeName}</div>
                     </div>
@@ -349,7 +366,7 @@ export const RoutePlanner: React.FC = () => {
                     onClick={() => handleToSuggestionSelect(suggestion)}
                     className="w-full text-left p-3 hover:bg-gray-50 flex items-start gap-3"
                   >
-                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <MapPinIcon />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">{suggestion.placeName}</div>
                     </div>
@@ -444,8 +461,9 @@ export const RoutePlanner: React.FC = () => {
                       <div className="text-xl mt-0.5">
                         {leg.transportMode === 'flight' ? '✈️' :
                          leg.transportMode === 'walking' ? '🚶' :
-                         leg.transportMode === 'cycling' ? '🚴' :
-                         leg.transportMode === 'transit' ? '🚌' : '🚗'}
+                         leg.transportMode === 'transit' ? '🚌' :
+                         leg.transportMode === 'transfer' ? '🔄' :
+                         '🚗'}
                       </div>
                       <div className="flex-1">
                         <div className="font-medium">{leg.modeLabel || leg.transportMode}</div>
