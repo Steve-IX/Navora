@@ -1284,16 +1284,30 @@ export class RoutingService {
 
       // If no airports from API, use fallback
       if (allAirports.length === 0) {
-        const fallback = this.getFallbackAirport(coordinates);
+        const fallback = await this.getFallbackAirport(coordinates, requiredCountry || undefined);
         if (fallback) {
           this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
         }
         return fallback;
       }
 
-      // Filter and find nearest viable commercial airport within radius
-      let nearestAirport: { iata: string; name: string; lat: number; lng: number } | null = null;
+      // Get target country if not provided
+      let targetCountry = requiredCountry;
+      if (!targetCountry) {
+        targetCountry = await this.getCountryFromCoordinates(coordinates);
+      }
+
+      // Filter and find nearest viable commercial airport within radius AND same country
+      let nearestAirport: { iata: string; name: string; lat: number; lng: number; country?: string } | null = null;
       let minDistance = Infinity;
+
+      // First pass: Collect all airports within radius with country info
+      const airportsInRadius: Array<{
+        airport: any;
+        coords: { longitude: number; latitude: number };
+        distance: number;
+        country: string | null;
+      }> = [];
 
       for (const airport of allAirports) {
         if (!airport.latitude || !airport.longitude || !airport.iata_code) continue;
@@ -1309,13 +1323,38 @@ export class RoutingService {
         const distance = this.calculateGreatCircleDistance(coordinates, airportCoords);
 
         // Only consider airports within search radius
-        if (distance <= searchRadiusMeters && distance < minDistance) {
-          minDistance = distance;
+        if (distance > searchRadiusMeters) continue;
+
+        // Get airport country
+        const airportCountry = await this.getCountryFromCoordinates(airportCoords);
+        
+        airportsInRadius.push({
+          airport,
+          coords: airportCoords,
+          distance,
+          country: airportCountry,
+        });
+      }
+
+      // Second pass: Prioritize same-country airports
+      for (const item of airportsInRadius) {
+        // CRITICAL: If target country is known, ONLY consider airports in same country
+        if (targetCountry) {
+          if (!item.country || item.country.toLowerCase() !== targetCountry.toLowerCase()) {
+            // Airport is in different country - skip it
+            continue;
+          }
+        }
+
+        // Found valid airport in same country and within radius
+        if (item.distance < minDistance) {
+          minDistance = item.distance;
           nearestAirport = {
-            iata: airport.iata_code,
-            name: airport.airport_name || airport.name || `${airport.iata_code} Airport`,
-            lat: parseFloat(airport.latitude),
-            lng: parseFloat(airport.longitude),
+            iata: item.airport.iata_code,
+            name: item.airport.airport_name || item.airport.name || `${item.airport.iata_code} Airport`,
+            lat: item.coords.latitude,
+            lng: item.coords.longitude,
+            country: item.country || undefined,
           };
         }
       }
@@ -1334,7 +1373,7 @@ export class RoutingService {
           );
         }
         // Final fallback (only if no country requirement)
-        const fallback = this.getFallbackAirport(coordinates);
+        const fallback = await this.getFallbackAirport(coordinates, requiredCountry || undefined);
         if (fallback) {
           this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
         }
@@ -1347,7 +1386,11 @@ export class RoutingService {
       return nearestAirport;
     } catch (error) {
       console.error('Error finding nearest airport:', error);
-      const fallback = this.getFallbackAirport(coordinates);
+      // If it's a validation error about country, re-throw it
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      const fallback = await this.getFallbackAirport(coordinates, requiredCountry || undefined);
       if (fallback) {
         this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
       }
@@ -1357,30 +1400,80 @@ export class RoutingService {
 
   /**
    * Get fallback airport based on rough geographic location
+   * Now includes country-aware selection
    */
-  private getFallbackAirport(
+  private async getFallbackAirport(
     coordinates: { longitude: number; latitude: number },
-  ): { iata: string; name: string; lat: number; lng: number } | null {
-    // Major airports by region (rough approximation)
+    requiredCountry?: string | null,
+  ): Promise<{ iata: string; name: string; lat: number; lng: number } | null> {
+    // Major airports by region with country codes
     const majorAirports = [
-      { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781 },
-      { iata: 'LAX', name: 'Los Angeles International', lat: 33.9425, lng: -118.4081 },
-      { iata: 'ORD', name: 'Chicago O\'Hare International', lat: 41.9742, lng: -87.9073 },
-      { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543 },
-      { iata: 'CDG', name: 'Paris Charles de Gaulle', lat: 49.0097, lng: 2.5479 },
-      { iata: 'FRA', name: 'Frankfurt Airport', lat: 50.0379, lng: 8.5622 },
-      { iata: 'DXB', name: 'Dubai International', lat: 25.2532, lng: 55.3657 },
-      { iata: 'HND', name: 'Tokyo Haneda', lat: 35.5494, lng: 139.7798 },
-      { iata: 'SIN', name: 'Singapore Changi', lat: 1.3644, lng: 103.9915 },
-      { iata: 'SYD', name: 'Sydney Airport', lat: -33.9399, lng: 151.1753 },
-      { iata: 'GRU', name: 'São Paulo Guarulhos', lat: -23.4356, lng: -46.4731 },
-      { iata: 'JNB', name: 'Johannesburg O.R. Tambo', lat: -26.1392, lng: 28.2460 },
+      // North America
+      { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781, country: 'us' },
+      { iata: 'LAX', name: 'Los Angeles International', lat: 33.9425, lng: -118.4081, country: 'us' },
+      { iata: 'ORD', name: 'Chicago O\'Hare International', lat: 41.9742, lng: -87.9073, country: 'us' },
+      { iata: 'YYZ', name: 'Toronto Pearson', lat: 43.6772, lng: -79.6306, country: 'ca' },
+      { iata: 'MEX', name: 'Mexico City International', lat: 19.4363, lng: -99.0721, country: 'mx' },
+      
+      // Europe
+      { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543, country: 'gb' },
+      { iata: 'CDG', name: 'Paris Charles de Gaulle', lat: 49.0097, lng: 2.5479, country: 'fr' },
+      { iata: 'FRA', name: 'Frankfurt Airport', lat: 50.0379, lng: 8.5622, country: 'de' },
+      { iata: 'AMS', name: 'Amsterdam Schiphol', lat: 52.3105, lng: 4.7683, country: 'nl' },
+      { iata: 'MAD', name: 'Madrid Barajas', lat: 40.4839, lng: -3.5680, country: 'es' },
+      { iata: 'FCO', name: 'Rome Fiumicino', lat: 41.8003, lng: 12.2389, country: 'it' },
+      
+      // Middle East
+      { iata: 'DXB', name: 'Dubai International', lat: 25.2532, lng: 55.3657, country: 'ae' },
+      { iata: 'DOH', name: 'Doha Hamad International', lat: 25.2731, lng: 51.6081, country: 'qa' },
+      
+      // Asia
+      { iata: 'HND', name: 'Tokyo Haneda', lat: 35.5494, lng: 139.7798, country: 'jp' },
+      { iata: 'PEK', name: 'Beijing Capital', lat: 40.0801, lng: 116.5849, country: 'cn' },
+      { iata: 'PVG', name: 'Shanghai Pudong', lat: 31.1434, lng: 121.8052, country: 'cn' },
+      { iata: 'SIN', name: 'Singapore Changi', lat: 1.3644, lng: 103.9915, country: 'sg' },
+      { iata: 'BKK', name: 'Bangkok Suvarnabhumi', lat: 13.6811, lng: 100.7475, country: 'th' },
+      { iata: 'ICN', name: 'Seoul Incheon', lat: 37.4602, lng: 126.4407, country: 'kr' },
+      { iata: 'DEL', name: 'Delhi Indira Gandhi', lat: 28.5562, lng: 77.1000, country: 'in' },
+      
+      // Oceania
+      { iata: 'SYD', name: 'Sydney Airport', lat: -33.9399, lng: 151.1753, country: 'au' },
+      { iata: 'AKL', name: 'Auckland Airport', lat: -37.0082, lng: 174.7850, country: 'nz' },
+      
+      // South America
+      { iata: 'GRU', name: 'São Paulo Guarulhos', lat: -23.4356, lng: -46.4731, country: 'br' },
+      { iata: 'EZE', name: 'Buenos Aires Ezeiza', lat: -34.8222, lng: -58.5358, country: 'ar' },
+      
+      // Africa
+      { iata: 'JNB', name: 'Johannesburg O.R. Tambo', lat: -26.1392, lng: 28.2460, country: 'za' },
+      { iata: 'CAI', name: 'Cairo International', lat: 30.1219, lng: 31.4056, country: 'eg' },
+      { iata: 'CMN', name: 'Casablanca Mohammed V', lat: 33.3675, lng: -7.5898, country: 'ma' },
+      { iata: 'TNR', name: 'Antananarivo Ivato', lat: -18.7969, lng: 47.4788, country: 'mg' }, // Madagascar
+      { iata: 'NBO', name: 'Nairobi Jomo Kenyatta', lat: -1.3192, lng: 36.9275, country: 'ke' },
     ];
 
-    let nearestAirport = majorAirports[0];
+    // If country is required, filter to same-country airports first
+    let candidateAirports = majorAirports;
+    if (requiredCountry) {
+      candidateAirports = majorAirports.filter(ap => ap.country === requiredCountry.toLowerCase());
+      
+      // If no airports found for required country, try to get country from coordinates
+      if (candidateAirports.length === 0) {
+        const detectedCountry = await this.getCountryFromCoordinates(coordinates);
+        if (detectedCountry && detectedCountry.toLowerCase() === requiredCountry.toLowerCase()) {
+          // Country matches, but no airport in our list - use closest airport as last resort
+          candidateAirports = majorAirports;
+        } else {
+          // Country doesn't match - return null to trigger proper error
+          return null;
+        }
+      }
+    }
+
+    let nearestAirport = candidateAirports[0];
     let minDistance = Infinity;
 
-    for (const airport of majorAirports) {
+    for (const airport of candidateAirports) {
       const distance = this.calculateGreatCircleDistance(
         coordinates,
         { longitude: airport.lng, latitude: airport.lat },
@@ -1392,7 +1485,12 @@ export class RoutingService {
       }
     }
 
-    return nearestAirport;
+    return {
+      iata: nearestAirport.iata,
+      name: nearestAirport.name,
+      lat: nearestAirport.lat,
+      lng: nearestAirport.lng,
+    };
   }
 
   /**
