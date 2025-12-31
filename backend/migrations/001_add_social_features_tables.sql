@@ -1,6 +1,17 @@
 -- Migration: Add Social Features Tables
 -- This migration creates all the necessary tables for social collaboration features
 
+-- Enable required extensions
+-- Note: These may fail if extensions are not available (e.g., PostGIS on Railway's standard PostgreSQL)
+-- The application will handle this gracefully
+
+-- Enable uuid-ossp for UUID generation
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Enable PostGIS for geographic data types
+-- This may fail on PostgreSQL instances without PostGIS installed
+CREATE EXTENSION IF NOT EXISTS "postgis";
+
 -- User Profiles
 CREATE TABLE IF NOT EXISTS "user_profiles" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

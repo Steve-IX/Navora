@@ -3,11 +3,31 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { DatabaseInitService } from './config/database-init.service';
+import { DataSource } from 'typeorm';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
+
+  // Initialize database (enable extensions, run migrations)
+  // Only run in production or if explicitly enabled
+  const runDbInit = configService.get('RUN_DB_INIT') === 'true' || 
+                    configService.get('NODE_ENV') === 'production';
+  
+  if (runDbInit) {
+    try {
+      const dataSource = app.get(DataSource);
+      const dbInitService = new DatabaseInitService(dataSource, configService);
+      await dbInitService.initialize();
+    } catch (error) {
+      console.error('Database initialization error:', error);
+      // In production, we might want to exit if DB init fails
+      // For now, log and continue to allow app to start
+      // The app will fail later if tables don't exist anyway
+    }
+  }
 
   // Security
   app.use(helmet());

@@ -16,11 +16,19 @@ Deploy the complete GPS Mapping Application (frontend + backend + database) to R
 3. Select **"Deploy from GitHub repo"**
 4. Connect your GitHub account and select your repository
 
-### Step 2: Add PostgreSQL with PostGIS
+### Step 2: Set Up Database (Use Supabase - Recommended)
 
+**Important**: Railway's standard PostgreSQL doesn't include PostGIS. We recommend using **Supabase** instead, which includes PostGIS by default.
+
+**Option A: Use Supabase (Recommended - PostGIS Included)**
+1. Create a Supabase project at [supabase.com](https://supabase.com/)
+2. Enable PostGIS extension (see [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for detailed instructions)
+3. Use Supabase connection details in Step 3
+
+**Option B: Use Railway PostgreSQL (Not Recommended)**
 1. In your Railway project, click **"+ New"**
 2. Select **"Database"** → **"Add PostgreSQL"**
-3. Once created, click on the PostgreSQL service
+3. Note: PostGIS is not available, geographic features won't work
 4. Go to **"Variables"** tab and note the connection details
 
 ### Step 3: Deploy the Backend
@@ -81,14 +89,44 @@ After getting your frontend URL, update the backend's `FRONTEND_URL` variable:
 FRONTEND_URL=https://your-frontend.up.railway.app
 ```
 
-### Step 6: Enable PostGIS Extension
+### Step 6: Database Setup (PostGIS and Migrations)
 
-1. Click on your PostgreSQL service
-2. Go to **"Data"** tab or connect using the provided credentials
-3. Run:
+**Important**: The application requires PostGIS for geographic data types. Railway's standard PostgreSQL **does not include PostGIS** by default.
+
+**Option A: Use Railway with PostGIS (Recommended)**
+
+Railway now supports PostGIS-enabled PostgreSQL. When creating your PostgreSQL service:
+1. Look for a **PostgreSQL with PostGIS** template/option
+2. If not available, you may need to use a custom Docker image or different provider
+
+**Option B: Manual PostGIS Installation (Advanced)**
+
+If you must use Railway's standard PostgreSQL, you would need to manually install PostGIS, which is complex and not recommended.
+
+**Automatic Migration Execution**
+
+The application will automatically:
+- Attempt to enable PostGIS extension on startup
+- Run database migrations to create required tables
+- Enable uuid-ossp extension for UUID generation
+
+To enable automatic database initialization, ensure:
+```
+RUN_DB_INIT=true
+```
+
+This is enabled by default in production mode. Check your backend logs after deployment to verify migrations ran successfully.
+
+**Manual Migration (if needed)**
+
+If automatic migrations fail, you can manually connect to your database and run:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS postgis;
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "postgis";  -- May fail if PostGIS not installed
+
+-- Then run the migration file: backend/migrations/001_add_social_features_tables.sql
 ```
 
 ## Environment Variables Reference
@@ -105,6 +143,8 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 | `DB_PASSWORD` | PostgreSQL password | Use `${{Postgres.PGPASSWORD}}` |
 | `DB_NAME` | PostgreSQL database | Use `${{Postgres.PGDATABASE}}` |
 | `DB_SSL` | Enable SSL | `true` |
+| `DB_SYNCHRONIZE` | TypeORM auto-sync (dev only) | `false` (production) |
+| `RUN_DB_INIT` | Run DB initialization on startup | `true` (production) |
 | `JWT_SECRET` | Secret for JWT tokens | Random secure string |
 | `JWT_EXPIRES_IN` | Token expiration | `7d` |
 | `MAPBOX_ACCESS_TOKEN` | Mapbox API token | Your token |
@@ -137,11 +177,47 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 ## Troubleshooting
 
+### PostGIS Extension Not Available
+
+**Error**: `extension "postgis" is not available`
+
+**Cause**: Railway's standard PostgreSQL 17 doesn't include PostGIS by default.
+
+**Solutions**:
+
+1. **Switch to a PostGIS-enabled provider**:
+   - Use **Supabase** (PostgreSQL with PostGIS included)
+   - Use **Neon** with PostGIS extension
+   - Use **AWS RDS** with PostGIS
+   - Use **DigitalOcean** Managed PostgreSQL with PostGIS
+
+2. **Use Railway with custom PostGIS image** (if supported):
+   - Check Railway's documentation for PostGIS templates
+   - Or use a custom Docker image for PostgreSQL with PostGIS
+
+3. **Temporary workaround** (not recommended):
+   - The application will log a warning but continue
+   - Geographic features (location sharing, coordinates) won't work properly
+   - You'll need to modify the schema to use regular types instead of GEOGRAPHY
+
 ### Database Connection Issues
 
 - Ensure `DB_SSL=true` is set for Railway PostgreSQL
-- Check that PostGIS extension is enabled
+- Check that PostGIS extension is enabled (see above)
 - Verify database variables are using Railway references (`${{Postgres.PGHOST}}`, etc.)
+
+### Missing Tables Error
+
+**Error**: `relation "friendships" does not exist` or similar
+
+**Cause**: Database migrations haven't run.
+
+**Solutions**:
+
+1. Ensure `RUN_DB_INIT=true` is set (enabled by default in production)
+2. Check backend logs for migration execution
+3. Manually run migrations by connecting to the database and executing `backend/migrations/001_add_social_features_tables.sql`
+4. If using TypeORM synchronize in development, ensure `DB_SYNCHRONIZE=true` is set
 
 ### CORS Errors
 
