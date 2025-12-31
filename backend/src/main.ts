@@ -34,29 +34,38 @@ async function bootstrap() {
   const frontendUrl = configService.get('FRONTEND_URL') || 'http://localhost:5173';
   const allowedOrigins = frontendUrl.split(',').map((url: string) => url.trim());
   
+  // Enable CORS with explicit configuration
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, curl, etc.)
-      if (!origin) return callback(null, true);
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
       
       // Check if origin matches any allowed origin
       const isAllowed = allowedOrigins.some((allowed: string) => {
         if (allowed === '*') return true;
-        // Exact match or starts with (for subdomains)
-        return origin === allowed || origin.startsWith(allowed);
+        // Exact match
+        if (origin === allowed) return true;
+        // Starts with match (for subdomains)
+        if (origin.startsWith(allowed)) return true;
+        return false;
       });
       
       if (isAllowed) {
         callback(null, true);
       } else {
         console.warn(`CORS blocked origin: ${origin}. Allowed: ${allowedOrigins.join(', ')}`);
-        callback(null, false);
+        callback(new Error('Not allowed by CORS'), false);
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     exposedHeaders: ['Content-Type', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Security - configure helmet to work with CORS
