@@ -29,10 +29,8 @@ async function bootstrap() {
     }
   }
 
-  // Security
-  app.use(helmet());
-
   // CORS - support multiple origins for production
+  // IMPORTANT: Configure CORS BEFORE helmet to ensure preflight requests work
   const frontendUrl = configService.get('FRONTEND_URL') || 'http://localhost:5173';
   const allowedOrigins = frontendUrl.split(',').map((url: string) => url.trim());
   
@@ -41,14 +39,31 @@ async function bootstrap() {
       // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) return callback(null, true);
       
-      if (allowedOrigins.some((allowed: string) => origin.startsWith(allowed) || allowed === '*')) {
+      // Check if origin matches any allowed origin
+      const isAllowed = allowedOrigins.some((allowed: string) => {
+        if (allowed === '*') return true;
+        // Exact match or starts with (for subdomains)
+        return origin === allowed || origin.startsWith(allowed);
+      });
+      
+      if (isAllowed) {
         callback(null, true);
       } else {
+        console.warn(`CORS blocked origin: ${origin}. Allowed: ${allowedOrigins.join(', ')}`);
         callback(null, false);
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
   });
+
+  // Security - configure helmet to work with CORS
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
+  }));
 
   // Global validation pipe
   app.useGlobalPipes(
