@@ -7,7 +7,9 @@ import { DatabaseInitService } from './config/database-init.service';
 import { DataSource } from 'typeorm';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    cors: true, // Enable CORS at the NestJS application level
+  });
 
   const configService = app.get(ConfigService);
 
@@ -34,38 +36,18 @@ async function bootstrap() {
   const frontendUrl = configService.get('FRONTEND_URL') || 'http://localhost:5173';
   const allowedOrigins = frontendUrl.split(',').map((url: string) => url.trim());
   
-  // Enable CORS with explicit configuration
+  console.log(`[CORS] Configuring CORS with allowed origins: ${allowedOrigins.join(', ')}`);
+  
+  // Enable CORS with explicit configuration - use array of origins for better compatibility
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, etc.)
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-      
-      // Check if origin matches any allowed origin
-      const isAllowed = allowedOrigins.some((allowed: string) => {
-        if (allowed === '*') return true;
-        // Exact match
-        if (origin === allowed) return true;
-        // Starts with match (for subdomains)
-        if (origin.startsWith(allowed)) return true;
-        return false;
-      });
-      
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        console.warn(`CORS blocked origin: ${origin}. Allowed: ${allowedOrigins.join(', ')}`);
-        callback(new Error('Not allowed by CORS'), false);
-      }
-    },
+    origin: allowedOrigins, // Use array instead of function for better Railway compatibility
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     exposedHeaders: ['Content-Type', 'Authorization'],
     preflightContinue: false,
     optionsSuccessStatus: 204,
+    maxAge: 86400, // Cache preflight for 24 hours
   });
 
   // Security - configure helmet to work with CORS
