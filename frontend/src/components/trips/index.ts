@@ -1,0 +1,2 @@
+export { GroupTripPlanner } from './GroupTripPlanner';
+

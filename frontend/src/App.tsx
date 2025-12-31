@@ -7,6 +7,8 @@ import { GPSIndicator } from './components/location/GPSIndicator';
 import { SidePanel } from './components/layout/SidePanel';
 import { PlaceSearch, PlaceDetails, NearbyPlaces } from './components/places';
 import { MeasurementTool } from './components/tools';
+import { FriendsPanel, UserProfile, SocialFeed } from './components/social';
+import { GroupTripPlanner } from './components/trips';
 import { useMapStore } from './stores/mapStore';
 import { usePlacesStore } from './stores/placesStore';
 import { useUIStore } from './stores/uiStore';
@@ -14,7 +16,10 @@ import { authService } from './services/api/auth.service';
 import { locationService } from './services/locationService';
 import { shareService } from './services/share.service';
 import { geocodingService } from './services/api/geocoding.service';
+import { websocketService } from './services/websocket.service';
 import { useRouteStore } from './stores/routeStore';
+import { useLocationShareStore } from './stores/locationShareStore';
+import { useLocationStore } from './stores/locationStore';
 import { Coordinates } from '@shared/types/geocoding';
 import { Place } from '@shared/types/places';
 import { getPlaceholderImage, getPlaceholderThumbnail } from './utils/placeholders';
@@ -28,6 +33,8 @@ function App() {
   const { selectedPlace, setSelectedPlace } = usePlacesStore();
   const { sidePanelOpen, sidePanelContent, setSidePanelOpen, setSidePanelContent } = useUIStore();
   const { addWaypoint, setProfile } = useRouteStore();
+  const { updateFriendLocation } = useLocationShareStore();
+  const { currentLocation, isTracking } = useLocationStore();
   const [showMeasurementTool, setShowMeasurementTool] = useState(false);
   const [isLoadingPoi, setIsLoadingPoi] = useState(false);
 
@@ -98,8 +105,32 @@ function App() {
       setIsReady(true);
       initializeLocation();
       handleSharedContent();
+      
+      // Connect WebSocket
+      websocketService.connect(token);
+      
+      // Set up location update callback
+      const unsubscribe = websocketService.onLocationUpdate((data) => {
+        updateFriendLocation(data.userId, {
+          userId: data.userId,
+          coordinates: data.coordinates,
+          timestamp: new Date(data.timestamp),
+        });
+      });
+
+      return () => {
+        unsubscribe();
+        websocketService.disconnect();
+      };
     }
-  }, [setCenter, setZoom]);
+  }, [setCenter, setZoom, updateFriendLocation]);
+
+  // Send location updates via WebSocket when tracking
+  useEffect(() => {
+    if (isTracking && currentLocation && websocketService.isConnected()) {
+      websocketService.sendLocationUpdate(currentLocation);
+    }
+  }, [currentLocation, isTracking]);
 
   // Handle regular map clicks - reverse geocode to get place info
   const handleMapClick = useCallback(async (coordinates: Coordinates) => {
@@ -234,6 +265,54 @@ function App() {
             </svg>
           </button>
           <button
+            onClick={() => {
+              setSidePanelContent('friends');
+              setSidePanelOpen(true);
+            }}
+            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Friends"
+          >
+            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => {
+              setSidePanelContent('profile');
+              setSidePanelOpen(true);
+            }}
+            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Profile"
+          >
+            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => {
+              setSidePanelContent('trips');
+              setSidePanelOpen(true);
+            }}
+            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Group Trips"
+          >
+            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+          </button>
+          <button
+            onClick={() => {
+              setSidePanelContent('feed');
+              setSidePanelOpen(true);
+            }}
+            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Social Feed"
+          >
+            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <button
             onClick={() => setShowMeasurementTool(!showMeasurementTool)}
             className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
             aria-label="Measurement tool"
@@ -281,6 +360,66 @@ function App() {
             </div>
           </div>
         )}
+      </SidePanel>
+
+      {/* Side Panel for Friends */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'friends'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        title="Friends"
+        width="md"
+      >
+        <div className="p-4">
+          <FriendsPanel />
+        </div>
+      </SidePanel>
+
+      {/* Side Panel for Profile */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'profile'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        title="Profile"
+        width="md"
+      >
+        <div className="p-4">
+          <UserProfile />
+        </div>
+      </SidePanel>
+
+      {/* Side Panel for Group Trips */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'trips'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        title="Group Trips"
+        width="md"
+      >
+        <div className="p-4">
+          <GroupTripPlanner />
+        </div>
+      </SidePanel>
+
+      {/* Side Panel for Social Feed */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'feed'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        title="Social Feed"
+        width="md"
+      >
+        <div className="p-4">
+          <SocialFeed />
+        </div>
       </SidePanel>
     </div>
   );

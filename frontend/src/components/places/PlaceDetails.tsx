@@ -5,6 +5,8 @@ import { useRouteStore } from '@/stores/routeStore';
 import { useLocationStore } from '@/stores/locationStore';
 import { useUIStore } from '@/stores/uiStore';
 import { ShareButton } from '../sharing/ShareButton';
+import { CheckInButton } from '../social/CheckInButton';
+import { PlaceReviews } from './PlaceReviews';
 import { placesService } from '@/services/api/places.service';
 import { getPlaceholderImage, getPlaceholderThumbnail } from '@/utils/placeholders';
 
@@ -272,6 +274,22 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
               </div>
             </div>
           )}
+        </div>
+
+        {/* Check-in */}
+        <div className="mb-4">
+          <CheckInButton
+            place={displayPlace}
+            coordinates={displayPlace.coordinates}
+          />
+        </div>
+
+        {/* Reviews */}
+        <div className="mb-4">
+          <PlaceReviews
+            place={displayPlace}
+            coordinates={displayPlace.coordinates}
+          />
         </div>
 
         {/* Coordinates */}
