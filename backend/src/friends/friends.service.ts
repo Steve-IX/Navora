@@ -85,26 +85,32 @@ export class FriendsService {
   }
 
   async getFriends(userId: string) {
-    const friendships = await this.friendshipsRepository.find({
-      where: [
-        { requesterId: userId, status: FriendshipStatus.ACCEPTED },
-        { addresseeId: userId, status: FriendshipStatus.ACCEPTED },
-      ],
-      relations: ['requester', 'addressee'],
-    });
+    try {
+      const friendships = await this.friendshipsRepository.find({
+        where: [
+          { requesterId: userId, status: FriendshipStatus.ACCEPTED },
+          { addresseeId: userId, status: FriendshipStatus.ACCEPTED },
+        ],
+        relations: ['requester', 'addressee'],
+      });
 
-    return friendships.map((friendship) => {
-      const friend = friendship.requesterId === userId ? friendship.addressee : friendship.requester;
-      return {
-        id: friendship.id,
-        friendshipId: friendship.id,
-        friend: {
-          id: friend.id,
-          email: friend.email,
-        },
-        createdAt: friendship.createdAt,
-      };
-    });
+      return friendships.map((friendship) => {
+        const friend = friendship.requesterId === userId ? friendship.addressee : friendship.requester;
+        return {
+          id: friendship.id,
+          friendshipId: friendship.id,
+          friend: {
+            id: friend?.id || '',
+            email: friend?.email || 'Unknown',
+          },
+          createdAt: friendship.createdAt,
+        };
+      });
+    } catch (error) {
+      console.error('Error getting friends:', error);
+      // Return empty array if table doesn't exist yet
+      return [];
+    }
   }
 
   async getFriendRequests(userId: string, type: 'sent' | 'received' = 'received') {

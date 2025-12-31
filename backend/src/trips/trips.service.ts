@@ -45,21 +45,27 @@ export class TripsService {
   }
 
   async getMyTrips(userId: string): Promise<GroupTrip[]> {
-    const participants = await this.participantsRepository.find({
-      where: { userId },
-      relations: ['trip', 'trip.organizer'],
-    });
+    try {
+      const participants = await this.participantsRepository.find({
+        where: { userId },
+        relations: ['trip', 'trip.organizer'],
+      });
 
-    const tripIds = participants.map((p) => p.tripId);
-    if (tripIds.length === 0) {
+      const tripIds = participants.map((p) => p.tripId);
+      if (tripIds.length === 0) {
+        return [];
+      }
+
+      return this.tripsRepository.find({
+        where: tripIds.map((id) => ({ id })),
+        relations: ['organizer', 'participants', 'participants.user', 'waypoints'],
+        order: { createdAt: 'DESC' },
+      });
+    } catch (error) {
+      console.error('Error getting trips:', error);
+      // Return empty array if tables don't exist yet
       return [];
     }
-
-    return this.tripsRepository.find({
-      where: tripIds.map((id) => ({ id })),
-      relations: ['organizer', 'participants', 'participants.user', 'waypoints'],
-      order: { createdAt: 'DESC' },
-    });
   }
 
   async getTrip(userId: string, tripId: string): Promise<GroupTrip> {

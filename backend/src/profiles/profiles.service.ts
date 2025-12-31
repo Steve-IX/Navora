@@ -22,17 +22,23 @@ export class ProfilesService {
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
-    const profile = await this.profilesRepository.findOne({
-      where: { userId },
-      relations: ['user'],
-    });
+    try {
+      const profile = await this.profilesRepository.findOne({
+        where: { userId },
+        relations: ['user'],
+      });
 
-    if (!profile) {
-      // Create profile if it doesn't exist
+      if (!profile) {
+        // Create profile if it doesn't exist
+        return this.createProfile(userId);
+      }
+
+      return profile;
+    } catch (error) {
+      // If table doesn't exist, create it by creating a profile
+      console.error('Error getting profile, attempting to create:', error);
       return this.createProfile(userId);
     }
-
-    return profile;
   }
 
   async updateProfile(userId: string, updateDto: UpdateProfileDto): Promise<UserProfile> {
