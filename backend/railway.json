@@ -6,7 +6,7 @@
     "buildCommand": "cd shared && npm install && npm run build && cd ../backend && npm install --include=dev && npm run build"
   },
   "deploy": {
-    "startCommand": "node backend/dist/src/main.js",
+    "startCommand": "node backend/dist/main.js",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
