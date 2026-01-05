@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserProfile } from './entities/user-profile.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { isGuestUserId } from '../common/utils/user.utils';
 
 @Injectable()
 export class ProfilesService {
@@ -22,6 +23,16 @@ export class ProfilesService {
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
+    // Guest users don't have database profiles
+    if (isGuestUserId(userId)) {
+      const guestProfile = new UserProfile();
+      guestProfile.userId = userId;
+      guestProfile.displayName = null;
+      guestProfile.locationSharingEnabled = false;
+      guestProfile.shareWithFriendsOnly = true;
+      return guestProfile;
+    }
+
     try {
       const profile = await this.profilesRepository.findOne({
         where: { userId },
@@ -42,6 +53,16 @@ export class ProfilesService {
   }
 
   async updateProfile(userId: string, updateDto: UpdateProfileDto): Promise<UserProfile> {
+    // Guest users cannot update profiles
+    if (isGuestUserId(userId)) {
+      const guestProfile = new UserProfile();
+      guestProfile.userId = userId;
+      guestProfile.displayName = null;
+      guestProfile.locationSharingEnabled = false;
+      guestProfile.shareWithFriendsOnly = true;
+      return guestProfile;
+    }
+
     let profile = await this.profilesRepository.findOne({
       where: { userId },
     });
@@ -55,6 +76,11 @@ export class ProfilesService {
   }
 
   async getProfileByUserId(userId: string): Promise<UserProfile | null> {
+    // Guest users don't have database profiles
+    if (isGuestUserId(userId)) {
+      return null;
+    }
+
     return this.profilesRepository.findOne({
       where: { userId },
       relations: ['user'],

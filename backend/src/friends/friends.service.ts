@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { Friendship, FriendshipStatus } from './entities/friendship.entity';
 import { CreateFriendRequestDto } from './dto/create-friend-request.dto';
 import { ProfilesService } from '../profiles/profiles.service';
+import { isGuestUserId } from '../common/utils/user.utils';
 
 @Injectable()
 export class FriendsService {
@@ -19,6 +20,10 @@ export class FriendsService {
   ) {}
 
   async sendFriendRequest(userId: string, dto: CreateFriendRequestDto): Promise<Friendship> {
+    // Guest users cannot send friend requests
+    if (isGuestUserId(userId) || isGuestUserId(dto.addresseeId)) {
+      throw new BadRequestException('Guest users cannot send friend requests');
+    }
     if (userId === dto.addresseeId) {
       throw new BadRequestException('Cannot send friend request to yourself');
     }
@@ -85,6 +90,11 @@ export class FriendsService {
   }
 
   async getFriends(userId: string) {
+    // Guest users have no friends
+    if (isGuestUserId(userId)) {
+      return [];
+    }
+
     try {
       const friendships = await this.friendshipsRepository.find({
         where: [
@@ -114,6 +124,11 @@ export class FriendsService {
   }
 
   async getFriendRequests(userId: string, type: 'sent' | 'received' = 'received') {
+    // Guest users have no friend requests
+    if (isGuestUserId(userId)) {
+      return [];
+    }
+
     const where =
       type === 'received'
         ? { addresseeId: userId, status: FriendshipStatus.PENDING }
@@ -154,6 +169,11 @@ export class FriendsService {
   }
 
   async areFriends(userId1: string, userId2: string): Promise<boolean> {
+    // Guest users cannot be friends
+    if (isGuestUserId(userId1) || isGuestUserId(userId2)) {
+      return false;
+    }
+
     const friendship = await this.friendshipsRepository.findOne({
       where: [
         { requesterId: userId1, addresseeId: userId2, status: FriendshipStatus.ACCEPTED },

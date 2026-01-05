@@ -7,6 +7,7 @@ import { TripWaypoint } from './entities/trip-waypoint.entity';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { AddWaypointDto } from './dto/add-waypoint.dto';
 import { Point } from 'geojson';
+import { isGuestUserId } from '../common/utils/user.utils';
 
 @Injectable()
 export class TripsService {
@@ -45,6 +46,11 @@ export class TripsService {
   }
 
   async getMyTrips(userId: string): Promise<GroupTrip[]> {
+    // Guest users have no trips
+    if (isGuestUserId(userId)) {
+      return [];
+    }
+
     try {
       const participants = await this.participantsRepository.find({
         where: { userId },
