@@ -64,9 +64,20 @@ async function bootstrap() {
   );
 
   const port = configService.get('PORT') || 3000;
-  // Listen on 0.0.0.0 for Railway/Docker compatibility
-  await app.listen(port, '0.0.0.0');
-  console.log(`Application is running on port ${port}`);
+  
+  try {
+    // Listen on 0.0.0.0 for Railway/Docker compatibility
+    await app.listen(port, '0.0.0.0');
+    console.log(`✅ Application is running on port ${port}`);
+    console.log(`✅ CORS enabled for origins: ${allowedOrigins.join(', ')}`);
+  } catch (error) {
+    console.error('❌ Failed to start application:', error);
+    process.exit(1);
+  }
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('❌ Bootstrap failed:', error);
+  process.exit(1);
+});
 
