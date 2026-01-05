@@ -7,9 +7,7 @@ import { DatabaseInitService } from './config/database-init.service';
 import { DataSource } from 'typeorm';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    cors: true, // Enable CORS at the NestJS application level
-  });
+  const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
 
@@ -38,9 +36,32 @@ async function bootstrap() {
   
   console.log(`[CORS] Configuring CORS with allowed origins: ${allowedOrigins.join(', ')}`);
   
-  // Enable CORS with explicit configuration - use array of origins for better compatibility
+  // Enable CORS with explicit configuration
+  // Use function for origin validation to handle edge cases
   app.enableCors({
-    origin: allowedOrigins, // Use array instead of function for better Railway compatibility
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, Postman, etc.)
+      if (!origin) {
+        console.log('[CORS] Allowing request with no origin');
+        return callback(null, true);
+      }
+      
+      // Check if origin matches any allowed origin
+      const isAllowed = allowedOrigins.some((allowed: string) => {
+        if (allowed === '*') return true;
+        // Exact match (case-sensitive)
+        if (origin === allowed) return true;
+        return false;
+      });
+      
+      if (isAllowed) {
+        console.log(`[CORS] Allowing origin: ${origin}`);
+        callback(null, true);
+      } else {
+        console.warn(`[CORS] Blocking origin: ${origin}. Allowed origins: ${allowedOrigins.join(', ')}`);
+        callback(new Error('Not allowed by CORS'), false);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
