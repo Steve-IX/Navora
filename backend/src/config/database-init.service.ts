@@ -65,14 +65,35 @@ export class DatabaseInitService {
     const queryRunner = this.dataSource.createQueryRunner();
 
     try {
-      // Read migration file
-      const migrationPath = join(
-        __dirname,
-        '../../migrations/001_add_social_features_tables.sql',
-      );
-      
-      this.logger.log(`Reading migration file: ${migrationPath}`);
-      const migrationSQL = readFileSync(migrationPath, 'utf-8');
+      // Read migration file - try multiple paths
+      // In production, migrations folder should be at backend/migrations/ (source location)
+      // process.cwd() should be /app/backend when running from backend directory
+      const possiblePaths = [
+        join(process.cwd(), 'migrations', '001_add_social_features_tables.sql'), // From backend root
+        join(__dirname, '../../../../migrations/001_add_social_features_tables.sql'), // Relative from dist/backend/src/config
+        join(__dirname, '../../../migrations/001_add_social_features_tables.sql'), // Fallback
+      ];
+
+      let migrationPath: string | null = null;
+      let migrationSQL: string | null = null;
+
+      for (const path of possiblePaths) {
+        try {
+          this.logger.log(`Trying migration path: ${path}`);
+          migrationSQL = readFileSync(path, 'utf-8');
+          migrationPath = path;
+          this.logger.log(`Successfully found migration file at: ${migrationPath}`);
+          break;
+        } catch (error: any) {
+          if (error.code !== 'ENOENT') {
+            throw error;
+          }
+        }
+      }
+
+      if (!migrationSQL) {
+        throw new Error('Migration file not found in any expected location');
+      }
 
       // Split by semicolons and execute each statement
       // Filter out empty statements and comments
