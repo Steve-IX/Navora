@@ -3,7 +3,7 @@
   "_updated": "2024-12-19",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "cd shared && npm install && npm run build && cd ../backend && npm install --include=dev && npm run build"
+    "buildCommand": "cd shared && npm install && npm run build && cd ../backend && npm install --include=dev && npm run build && ls -la dist/ && find dist -name 'main.js' -o -name 'main.js.map' 2>/dev/null || echo 'No dist/main.js found'"
   },
   "deploy": {
     "startCommand": "cd backend && node dist/main.js",
