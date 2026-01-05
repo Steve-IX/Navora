@@ -36,32 +36,9 @@ async function bootstrap() {
   
   console.log(`[CORS] Configuring CORS with allowed origins: ${allowedOrigins.join(', ')}`);
   
-  // Enable CORS with explicit configuration
-  // Use function for origin validation to handle edge cases
+  // Enable CORS - use simple array for better compatibility with Railway
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman, etc.)
-      if (!origin) {
-        console.log('[CORS] Allowing request with no origin');
-        return callback(null, true);
-      }
-      
-      // Check if origin matches any allowed origin
-      const isAllowed = allowedOrigins.some((allowed: string) => {
-        if (allowed === '*') return true;
-        // Exact match (case-sensitive)
-        if (origin === allowed) return true;
-        return false;
-      });
-      
-      if (isAllowed) {
-        console.log(`[CORS] Allowing origin: ${origin}`);
-        callback(null, true);
-      } else {
-        console.warn(`[CORS] Blocking origin: ${origin}. Allowed origins: ${allowedOrigins.join(', ')}`);
-        callback(new Error('Not allowed by CORS'), false);
-      }
-    },
+    origin: allowedOrigins, // Simple array instead of function
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
