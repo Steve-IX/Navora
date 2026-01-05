@@ -63,7 +63,12 @@ async function bootstrap() {
     }),
   );
 
-  const port = configService.get('PORT') || 3000;
+  // Railway automatically sets PORT env var - use it or default to 3000
+  const port = process.env.PORT || configService.get('PORT') || 3000;
+  
+  console.log(`[STARTUP] Attempting to start on port: ${port}`);
+  console.log(`[STARTUP] PORT env var: ${process.env.PORT}`);
+  console.log(`[STARTUP] ConfigService PORT: ${configService.get('PORT')}`);
   
   try {
     // Listen on 0.0.0.0 for Railway/Docker compatibility
