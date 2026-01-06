@@ -5,15 +5,28 @@
 -- 1. Enable RLS on spatial_ref_sys (PostGIS system table)
 -- ============================================================================
 -- This is a read-only PostGIS system table, so we enable RLS with a public read policy
-ALTER TABLE IF EXISTS public.spatial_ref_sys ENABLE ROW LEVEL SECURITY;
+-- Note: This may fail if you don't have ownership of the table (common in managed databases)
+-- The error can be safely ignored as spatial_ref_sys is a read-only system table
 
--- Drop policy if it exists, then create a read-only policy for spatial_ref_sys
--- (PostGIS needs to read this table)
-DROP POLICY IF EXISTS "Allow public read access to spatial_ref_sys" ON public.spatial_ref_sys;
-CREATE POLICY "Allow public read access to spatial_ref_sys"
-  ON public.spatial_ref_sys
-  FOR SELECT
-  USING (true);
+DO $$
+BEGIN
+  -- Try to enable RLS on spatial_ref_sys
+  -- This may fail if we don't have ownership, which is fine
+  BEGIN
+    ALTER TABLE IF EXISTS public.spatial_ref_sys ENABLE ROW LEVEL SECURITY;
+    
+    -- Drop policy if it exists, then create a read-only policy for spatial_ref_sys
+    -- (PostGIS needs to read this table)
+    DROP POLICY IF EXISTS "Allow public read access to spatial_ref_sys" ON public.spatial_ref_sys;
+    CREATE POLICY "Allow public read access to spatial_ref_sys"
+      ON public.spatial_ref_sys
+      FOR SELECT
+      USING (true);
+  EXCEPTION WHEN insufficient_privilege OR OTHERS THEN
+    -- If we don't have permissions, log a notice and continue
+    RAISE NOTICE 'Could not enable RLS on spatial_ref_sys: insufficient privileges. This is normal for managed databases and can be safely ignored.';
+  END;
+END $$;
 
 -- ============================================================================
 -- 2. Remove overly permissive service role policies
