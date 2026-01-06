@@ -49,11 +49,15 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
         setDetailedPlace(details);
       })
       .catch((error) => {
-        // Handle 404 and other errors gracefully
-        if (error.response?.status === 404 || error.message?.includes('404')) {
-          console.warn('Place details not available for this location');
-        } else {
-          console.error('Failed to load place details:', error);
+        // Handle expected errors silently (old-format IDs, generated IDs, 404s)
+        const isExpectedError = 
+          error.response?.status === 404 || 
+          error.message?.includes('404') ||
+          error.message?.includes('cannot be retrieved') ||
+          error.message?.includes('not available');
+        
+        if (!isExpectedError) {
+          console.warn('Failed to load place details:', error.message || error);
         }
         // Fallback to basic place info - ensure we have at least basic details
         setDetailedPlace({

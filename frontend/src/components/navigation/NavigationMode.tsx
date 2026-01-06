@@ -127,7 +127,10 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
             }
           },
           (error) => {
-            console.error('Geolocation error:', error);
+            // Only log non-permission errors (permission denied is expected and handled)
+            if (error.code !== error.PERMISSION_DENIED) {
+              console.warn('Geolocation error:', error.message || error);
+            }
             let errorMessage = 'Unable to get your location';
             switch (error.code) {
               case error.PERMISSION_DENIED:
@@ -149,7 +152,7 @@ export const NavigationMode: React.FC<NavigationModeProps> = ({ route, onExit })
           }
         );
       } catch (error) {
-        console.error('Error setting up geolocation:', error);
+        console.warn('Error setting up geolocation:', error);
         setLocationError('Failed to start location tracking');
       }
     }

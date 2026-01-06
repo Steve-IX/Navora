@@ -161,7 +161,11 @@ export class LocationService {
         this.listeners.forEach((listener) => listener(location));
       },
       (error) => {
-        console.error('Geolocation error:', error);
+        // Only log geolocation errors if they're not permission-related (user might have denied)
+        // Permission errors are expected and handled gracefully via IP geolocation fallback
+        if (error.code !== error.PERMISSION_DENIED) {
+          console.warn('Geolocation tracking error:', error.message || error);
+        }
       },
       this.options,
     );

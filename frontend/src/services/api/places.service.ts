@@ -212,13 +212,16 @@ export const placesService = {
       }
     }
 
+    // Validate and cap limit at 10 for search endpoint (backend max is 10)
+    const limit = request.limit ? Math.min(Math.max(1, request.limit), 10) : 10;
+    
     const params = new URLSearchParams({ query: request.query });
     if (request.category) params.append('category', request.category);
     if (request.coordinates) {
       params.append('longitude', request.coordinates.longitude.toString());
       params.append('latitude', request.coordinates.latitude.toString());
     }
-    if (request.limit) params.append('limit', request.limit.toString());
+    params.append('limit', limit.toString());
 
     const response = await apiClient.instance.get<Place[]>(`/places/search?${params.toString()}`);
     return response.data;
@@ -231,7 +234,9 @@ export const placesService = {
       }
 
       try {
-        const limit = request.limit || 20;
+        // Cap limit at 10 if category is selected, otherwise allow up to 20
+        const maxLimit = request.category ? 10 : 20;
+        const limit = request.limit ? Math.min(Math.max(1, request.limit), maxLimit) : maxLimit;
         
         // Try category endpoint first
         if (request.category) {
@@ -358,8 +363,18 @@ export const placesService = {
       }
     }
 
-    const response = await apiClient.instance.get<Place>(`/places/${placeId}`);
-    return response.data;
+    try {
+      const response = await apiClient.instance.get<Place>(`/places/${placeId}`);
+      return response.data;
+    } catch (error: any) {
+      // Re-throw expected 404 errors without logging (handled gracefully in PlaceDetails)
+      if (error.response?.status === 404) {
+        throw error;
+      }
+      // Log unexpected errors
+      console.error('Unexpected error fetching place details:', error);
+      throw error;
+    }
   },
 
   getCategories() {

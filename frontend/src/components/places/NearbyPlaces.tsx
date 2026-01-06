@@ -107,11 +107,15 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
     setError(null);
 
     try {
+      // Cap limit at 10 if category is selected (backend category endpoint max is 10)
+      // Otherwise allow up to 20 for non-category searches
+      const limit = selectedCategory ? 10 : 20;
+      
       const places = await placesService.getNearbyPlaces({
         coordinates: center,
         category: selectedCategory || undefined,
         radius: 2000, // 2km radius
-        limit: 20,
+        limit,
       });
       setNearbyPlaces(places);
     } catch (err: any) {
