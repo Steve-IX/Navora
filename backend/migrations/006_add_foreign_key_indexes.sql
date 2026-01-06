@@ -1,7 +1,12 @@
 -- Migration: Add Indexes for Foreign Keys
 -- This migration adds indexes for foreign key columns that are missing covering indexes.
 --
--- Why foreign key indexes are important:
+-- NOTE: This migration was created to address Supabase warnings about unindexed
+-- foreign keys. However, after adding these indexes, Supabase detected them as
+-- unused. The indexes in migration 005_optimize_unused_indexes.sql will remove
+-- these if they're not being used.
+--
+-- Why foreign key indexes are important (when used):
 -- 1. Speed up JOINs between tables
 -- 2. Speed up DELETE operations on referenced tables (checking for orphaned records)
 -- 3. Speed up UPDATE operations on referenced tables
@@ -9,7 +14,8 @@
 --
 -- Note: PostgreSQL does NOT automatically create indexes for foreign keys.
 -- While foreign key constraints ensure referential integrity, indexes must be
--- created manually for optimal performance.
+-- created manually for optimal performance. However, if indexes are unused, they
+-- add write overhead without providing query benefits.
 
 -- ============================================================================
 -- 1. Check-ins Table
