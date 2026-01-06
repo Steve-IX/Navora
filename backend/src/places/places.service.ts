@@ -64,23 +64,54 @@ export class PlacesService {
 
   async getPlaceDetails(placeId: string) {
     try {
-      // Use retrieve endpoint for detailed place info
-      const url = `${this.searchApiUrl}/retrieve/${placeId}?access_token=${this.mapboxAccessToken}`;
+      // Handle different ID formats
+      // Mapbox URIs (base64 encoded) start with "dXJuOm1ieHBvaTo" - these are from the old geocoding API
+      // Mapbox Search API uses mapbox_id which is different format
+      // The retrieve endpoint only works with mapbox_id from Search API
       
-      let response;
-      try {
-        response = await firstValueFrom(this.httpService.get(url));
-      } catch (retrieveError) {
-        // Fallback to geocoding API if retrieve fails
-        const geocodeUrl = `${this.geocodingApiUrl}/mapbox.places/${placeId}.json?access_token=${this.mapboxAccessToken}`;
-        response = await firstValueFrom(this.httpService.get(geocodeUrl));
+      // If this is a Mapbox URN (old geocoding API format), we can't retrieve it
+      // Return 404 with helpful message
+      if (placeId.startsWith('dXJuOm1ieHBvaTo')) {
+        throw new HttpException(
+          'Place details not available. This place ID uses an older format that cannot be retrieved. Please search for the place again.',
+          HttpStatus.NOT_FOUND,
+        );
       }
       
-      if (!response.data.features || response.data.features.length === 0) {
+      let response;
+      let feature;
+      
+      // Try retrieve endpoint first (works with mapbox_id from Search API)
+      try {
+        const retrieveUrl = `${this.searchApiUrl}/retrieve/${encodeURIComponent(placeId)}?access_token=${this.mapboxAccessToken}`;
+        response = await firstValueFrom(this.httpService.get(retrieveUrl));
+        
+        if (response.data && response.data.features && response.data.features.length > 0) {
+          feature = response.data.features[0];
+        } else if (response.data && response.data.type === 'Feature') {
+          // Single feature response
+          feature = response.data;
+        }
+      } catch (retrieveError: any) {
+        // If retrieve fails (404, etc.), try geocoding API as fallback
+        try {
+          const geocodeUrl = `${this.geocodingApiUrl}/mapbox.places/${encodeURIComponent(placeId)}.json?access_token=${this.mapboxAccessToken}`;
+          response = await firstValueFrom(this.httpService.get(geocodeUrl));
+          
+          if (response.data && response.data.features && response.data.features.length > 0) {
+            feature = response.data.features[0];
+          }
+        } catch (geocodeError: any) {
+          // Both endpoints failed - place not found
+          console.error('Place details retrieval failed for ID:', placeId, geocodeError.response?.data || geocodeError.message);
+          throw new HttpException('Place not found', HttpStatus.NOT_FOUND);
+        }
+      }
+      
+      if (!feature) {
         throw new HttpException('Place not found', HttpStatus.NOT_FOUND);
       }
 
-      const feature = response.data.features[0];
       const place = this.transformSearchResult(feature, null, true);
 
       // Enhance with additional details
@@ -117,10 +148,12 @@ export class PlacesService {
       if (options?.category) {
         const mapboxCategory = this.mapCategoryToSearchCategory(options.category);
         if (mapboxCategory) {
+          // Category endpoint has a max limit of 10
+          const categoryLimit = Math.min(limit, 10);
           const params = new URLSearchParams({
             access_token: this.mapboxAccessToken,
             proximity: `${coordinates.longitude},${coordinates.latitude}`,
-            limit: limit.toString(),
+            limit: categoryLimit.toString(),
             language: 'en',
           });
 
@@ -130,9 +163,11 @@ export class PlacesService {
             const response = await firstValueFrom(this.httpService.get(url));
 
             if (response.data && response.data.features) {
-              return response.data.features.map((feature: any) => 
+              const results = response.data.features.map((feature: any) => 
                 this.transformSearchResult(feature, options.category)
               );
+              // Return up to the requested limit
+              return results.slice(0, limit);
             }
           } catch (categoryError) {
             console.warn('Category search failed, falling back to text search:', categoryError);
@@ -241,8 +276,14 @@ export class PlacesService {
       address = address || context.place.name;
     }
 
+    // Prefer mapbox_id for retrieval, but keep original ID as fallback
+    const mapboxId = properties.mapbox_id;
+    const originalId = feature.id || `place-${Date.now()}`;
+    
     const result: any = {
-      id: properties.mapbox_id || feature.id || `place-${Date.now()}`,
+      id: mapboxId || originalId, // Use mapbox_id if available for better retrieval
+      originalId: originalId, // Keep original ID in case we need it
+      mapboxId: mapboxId, // Store mapbox_id separately for retrieval
       name: placeName,
       coordinates: coords,
       category,
