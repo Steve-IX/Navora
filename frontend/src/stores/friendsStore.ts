@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { Friend, FriendRequest } from '@shared/types/social';
 import { friendsService } from '@/services/api/friends.service';
+import { usersService, SearchUser } from '@/services/api/users.service';
 
 interface FriendsState {
   friends: Friend[];
   receivedRequests: FriendRequest[];
   sentRequests: FriendRequest[];
+  searchResults: SearchUser[];
+  isSearching: boolean;
   isLoading: boolean;
   error: string | null;
   setFriends: (friends: Friend[]) => void;
@@ -15,6 +18,8 @@ interface FriendsState {
   setError: (error: string | null) => void;
   fetchFriends: () => Promise<void>;
   fetchRequests: () => Promise<void>;
+  searchUsers: (query: string) => Promise<void>;
+  clearSearch: () => void;
   addFriend: (addresseeId: string) => Promise<void>;
   acceptRequest: (requestId: string) => Promise<void>;
   declineRequest: (requestId: string) => Promise<void>;
@@ -25,6 +30,8 @@ export const useFriendsStore = create<FriendsState>((set) => ({
   friends: [],
   receivedRequests: [],
   sentRequests: [],
+  searchResults: [],
+  isSearching: false,
   isLoading: false,
   error: null,
 
@@ -33,6 +40,27 @@ export const useFriendsStore = create<FriendsState>((set) => ({
   setSentRequests: (sentRequests) => set({ sentRequests }),
   setIsLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
+
+  searchUsers: async (query: string) => {
+    if (!query || query.trim().length < 2) {
+      set({ searchResults: [], isSearching: false });
+      return;
+    }
+
+    set({ isSearching: true, error: null });
+    try {
+      const results = await usersService.searchUsers(query);
+      set({ searchResults: results, isSearching: false });
+    } catch (error: any) {
+      set({
+        error: error.message || 'Failed to search users',
+        isSearching: false,
+        searchResults: [],
+      });
+    }
+  },
+
+  clearSearch: () => set({ searchResults: [], isSearching: false }),
 
   fetchFriends: async () => {
     set({ isLoading: true, error: null });

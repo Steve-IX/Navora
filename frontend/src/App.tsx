@@ -4,7 +4,7 @@ import { LayerControl } from './components/map/LayerControl';
 import { SearchBar } from './components/search/SearchBar';
 import { RoutePlanner } from './components/routing/RoutePlanner';
 import { GPSIndicator } from './components/location/GPSIndicator';
-import { SidePanel } from './components/layout/SidePanel';
+import { SidePanel, Header } from './components/layout';
 import { PlaceSearch, PlaceDetails, NearbyPlaces } from './components/places';
 import { MeasurementTool } from './components/tools';
 import { FriendsPanel, UserProfile, SocialFeed } from './components/social';
@@ -12,7 +12,7 @@ import { GroupTripPlanner } from './components/trips';
 import { useMapStore } from './stores/mapStore';
 import { usePlacesStore } from './stores/placesStore';
 import { useUIStore } from './stores/uiStore';
-import { authService } from './services/api/auth.service';
+import { useAuthStore } from './stores/authStore';
 import { locationService } from './services/locationService';
 import { shareService } from './services/share.service';
 import { geocodingService } from './services/api/geocoding.service';
@@ -35,6 +35,7 @@ function App() {
   const { addWaypoint, setProfile } = useRouteStore();
   const { updateFriendLocation } = useLocationShareStore();
   const { currentLocation, isTracking } = useLocationStore();
+  const { initializeAuth, isAuthenticated, token, isLoading: authLoading } = useAuthStore();
   const [showMeasurementTool, setShowMeasurementTool] = useState(false);
   const [isLoadingPoi, setIsLoadingPoi] = useState(false);
 
@@ -78,35 +79,31 @@ function App() {
     }
   };
 
+  // Initialize authentication
   useEffect(() => {
-    if (IS_DEMO_MODE) {
+    const init = async () => {
+      if (IS_DEMO_MODE) {
+        setIsReady(true);
+        initializeLocation();
+        handleSharedContent();
+        return;
+      }
+
+      await initializeAuth();
       setIsReady(true);
       initializeLocation();
       handleSharedContent();
+    };
+    init();
+  }, [initializeAuth]);
+
+  // Connect WebSocket when authenticated
+  useEffect(() => {
+    if (IS_DEMO_MODE || !token) {
       return;
     }
 
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      authService
-        .createGuestToken()
-        .then(() => {
-          setIsReady(true);
-          initializeLocation();
-          handleSharedContent();
-        })
-        .catch((error) => {
-          console.error('Failed to create guest token:', error);
-          setIsReady(true);
-          initializeLocation();
-          handleSharedContent();
-        });
-    } else {
-      setIsReady(true);
-      initializeLocation();
-      handleSharedContent();
-      
-      // Connect WebSocket
+    if (isAuthenticated || token) {
       websocketService.connect(token);
       
       // Set up location update callback
@@ -123,7 +120,7 @@ function App() {
         websocketService.disconnect();
       };
     }
-  }, [setCenter, setZoom, updateFriendLocation]);
+  }, [token, isAuthenticated, updateFriendLocation]);
 
   // Send location updates via WebSocket when tracking
   useEffect(() => {
@@ -227,7 +224,7 @@ function App() {
     setIsLoadingPoi(false);
   }, [setSelectedPlace, setSidePanelContent, setSidePanelOpen]);
 
-  if (!isReady) {
+  if (!isReady || authLoading) {
     return (
       <div className="w-full h-full flex items-center justify-center">
         <div className="text-center">
@@ -240,6 +237,9 @@ function App() {
 
   return (
     <div className="w-full h-full relative">
+      {/* Header */}
+      <Header />
+      
       {/* Route Planner - Persistent Left Sidebar */}
       <RoutePlanner />
       
