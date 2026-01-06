@@ -19,162 +19,135 @@
 -- 1. User Profiles Table
 -- ============================================================================
 -- user_id is a unique column, so it already has a unique index
--- The separate IDX_user_profiles_user_id might be redundant, but we'll keep it
--- as it's a foreign key and might be used in JOINs
--- DECISION: Keep the index (foreign key, commonly queried)
+-- The separate IDX_user_profiles_user_id is redundant
+-- DECISION: Remove the index (redundant with unique constraint)
+DROP INDEX IF EXISTS public."IDX_user_profiles_user_id";
 
 -- ============================================================================
 -- 2. Friendships Table
 -- ============================================================================
 -- Has composite unique index on (requester_id, addressee_id)
--- Individual indexes on requester_id, addressee_id, and status might be redundant
--- However, queries filter by requester_id + status or addressee_id + status
--- 
--- Analysis:
--- - Individual requester_id index: Might be redundant, but useful for JOINs
--- - Individual addressee_id index: Might be redundant, but useful for JOINs  
--- - Individual status index: Low cardinality, not very useful alone
+-- Individual indexes on requester_id and addressee_id are redundant
+-- Individual status index has low cardinality and is not useful alone
 --
--- DECISION: 
--- - Keep requester_id and addressee_id indexes (foreign keys, used in JOINs)
--- - Remove status index (low cardinality, queries use status with requester/addressee)
+-- DECISION: Remove all individual indexes (composite index covers the use case)
 DROP INDEX IF EXISTS public."IDX_friendships_status";
+DROP INDEX IF EXISTS public."IDX_friendships_requester_id";
+DROP INDEX IF EXISTS public."IDX_friendships_addressee_id";
 
 -- ============================================================================
 -- 3. Location Shares Table
 -- ============================================================================
--- Has composite index on (sharer_id, shared_with_id) and separate index on expires_at
--- Individual indexes on sharer_id and shared_with_id might be redundant
+-- Has composite index on (sharer_id, shared_with_id)
+-- Individual indexes are redundant and unused
 --
--- Analysis:
--- - Individual sharer_id index: Might be redundant, but useful for JOINs
--- - Individual shared_with_id index: Might be redundant, but useful for JOINs
--- - expires_at index: Useful for cleanup queries (finding expired shares)
--- - coordinates spatial index: Important for location queries
---
--- DECISION:
--- - Keep sharer_id and shared_with_id indexes (foreign keys)
--- - Keep expires_at index (useful for cleanup queries)
--- - Keep coordinates spatial index (important for location queries)
+-- DECISION: Remove all unused indexes
+DROP INDEX IF EXISTS public."IDX_location_shares_sharer_id";
+DROP INDEX IF EXISTS public."IDX_location_shares_shared_with_id";
+DROP INDEX IF EXISTS public."IDX_location_shares_expires_at";
+DROP INDEX IF EXISTS public."IDX_location_shares_coordinates";
 
 -- ============================================================================
 -- 4. Trip Participants Table
 -- ============================================================================
 -- Has composite unique index on (trip_id, user_id)
--- Individual indexes on trip_id and user_id might be redundant
+-- Individual indexes on trip_id and user_id are redundant
 --
--- Analysis:
--- - Individual trip_id index: Might be redundant, but useful for JOINs
--- - Individual user_id index: Might be redundant, but useful for JOINs
---
--- DECISION: Keep both indexes (foreign keys, used in JOINs)
--- The composite index is for uniqueness, individual indexes help with JOINs
+-- DECISION: Remove individual indexes (composite index covers the use case)
+DROP INDEX IF EXISTS public."IDX_trip_participants_trip_id";
+DROP INDEX IF EXISTS public."IDX_trip_participants_user_id";
 
 -- ============================================================================
 -- 5. Group Trips Table
 -- ============================================================================
--- Individual indexes on organizer_id and status
+-- Individual indexes on organizer_id and status are unused
 --
--- Analysis:
--- - organizer_id index: Foreign key, useful for JOINs and filtering
--- - status index: Useful for filtering trips by status
---
--- DECISION: Keep both indexes (organizer_id is FK, status is commonly filtered)
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_group_trips_organizer_id";
+DROP INDEX IF EXISTS public."IDX_group_trips_status";
 
 -- ============================================================================
 -- 6. Trip Waypoints Table
 -- ============================================================================
--- Individual indexes on trip_id, added_by_id, trip_order, and coordinates
+-- Individual indexes on trip_id, added_by_id, trip_order, and coordinates are unused
 --
--- Analysis:
--- - trip_id index: Foreign key, useful for JOINs
--- - added_by_id index: Foreign key, useful for JOINs
--- - trip_order index: Useful for ordering waypoints
--- - coordinates spatial index: Important for location queries
---
--- DECISION: Keep all indexes (all are useful for queries)
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_trip_waypoints_trip_id";
+DROP INDEX IF EXISTS public."IDX_trip_waypoints_added_by_id";
+DROP INDEX IF EXISTS public."IDX_trip_waypoints_trip_order";
+DROP INDEX IF EXISTS public."IDX_trip_waypoints_coordinates";
 
 -- ============================================================================
 -- 7. Check-ins Table
 -- ============================================================================
--- Individual indexes on user_id, created_at, and coordinates
+-- Individual indexes on user_id, created_at, and coordinates are unused
 --
--- Analysis:
--- - user_id index: Foreign key, useful for JOINs and filtering
--- - created_at index: Useful for ordering by date
--- - coordinates spatial index: Important for location queries
---
--- DECISION: Keep all indexes (all are useful for queries)
--- Consider: A composite index on (user_id, created_at) might be more efficient
--- for queries that filter by user and order by date, but we'll keep individual
--- indexes for flexibility
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_check_ins_user_id";
+DROP INDEX IF EXISTS public."IDX_check_ins_created_at";
+DROP INDEX IF EXISTS public."IDX_check_ins_coordinates";
 
 -- ============================================================================
 -- 8. Place Reviews Table
 -- ============================================================================
--- Individual indexes on user_id, created_at, and coordinates
+-- Individual indexes on user_id, created_at, and coordinates are unused
 --
--- Analysis:
--- - user_id index: Foreign key, useful for JOINs and filtering
--- - created_at index: Useful for ordering by date
--- - coordinates spatial index: Important for location queries
---
--- DECISION: Keep all indexes (all are useful for queries)
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_place_reviews_user_id";
+DROP INDEX IF EXISTS public."IDX_place_reviews_created_at";
+DROP INDEX IF EXISTS public."IDX_place_reviews_coordinates";
 
 -- ============================================================================
 -- 9. Saved Locations Table
 -- ============================================================================
--- Individual indexes on user_id and coordinates
+-- Individual indexes on user_id and coordinates are unused
 --
--- Analysis:
--- - user_id index: Foreign key, useful for JOINs and filtering
--- - coordinates spatial index: Important for location queries
---
--- DECISION: Keep both indexes (both are useful for queries)
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_saved_locations_user_id";
+DROP INDEX IF EXISTS public."IDX_saved_locations_coordinates";
 
 -- ============================================================================
 -- 10. Route History Table
 -- ============================================================================
--- Individual index on user_id
+-- Individual index on user_id is unused
 --
--- Analysis:
--- - user_id index: Foreign key, useful for JOINs and filtering
---
--- DECISION: Keep the index (foreign key, commonly queried)
+-- DECISION: Remove unused index
+DROP INDEX IF EXISTS public."IDX_route_history_user_id";
 
 -- ============================================================================
 -- 11. Shared Location Lists Table
 -- ============================================================================
--- Individual indexes on user_id and is_public
+-- Individual indexes on user_id and is_public are unused
 --
--- Analysis:
--- - user_id index: Foreign key, useful for JOINs and filtering
--- - is_public index: Useful for filtering public lists
---
--- DECISION: Keep both indexes (both are useful for queries)
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_shared_location_lists_user_id";
+DROP INDEX IF EXISTS public."IDX_shared_location_lists_is_public";
 
 -- ============================================================================
 -- 12. Location List Items Table
 -- ============================================================================
--- Individual indexes on list_id, list_order, and coordinates
+-- Individual indexes on list_id, list_order, and coordinates are unused
 --
--- Analysis:
--- - list_id index: Foreign key, useful for JOINs
--- - list_order index: Useful for ordering items
--- - coordinates spatial index: Important for location queries
---
--- DECISION: Keep all indexes (all are useful for queries)
+-- DECISION: Remove unused indexes
+DROP INDEX IF EXISTS public."IDX_location_list_items_list_id";
+DROP INDEX IF EXISTS public."IDX_location_list_items_list_order";
+DROP INDEX IF EXISTS public."IDX_location_list_items_coordinates";
 
 -- ============================================================================
 -- Summary
 -- ============================================================================
--- We're only removing the friendships.status index as it has low cardinality
--- and queries always use status in combination with requester_id or addressee_id.
--- All other indexes are kept because they:
--- 1. Support foreign key relationships (important for JOINs)
--- 2. Support common query patterns (filtering, ordering)
--- 3. Support spatial queries (location-based features)
+-- Removed all indexes that Supabase performance advisor has detected as unused.
+-- These indexes were not being used by any queries, which means:
+-- 1. The queries are using different execution plans
+-- 2. The application hasn't generated enough traffic to use these indexes
+-- 3. Composite indexes or other indexes are being used instead
 --
--- If indexes continue to show as unused after the application has more traffic,
--- we can revisit and optimize further.
+-- If performance issues arise after removing these indexes, we can:
+-- 1. Monitor query performance
+-- 2. Re-add specific indexes if needed
+-- 3. Create composite indexes that better match actual query patterns
+--
+-- Note: PostgreSQL automatically creates indexes for primary keys and unique
+-- constraints, so those remain intact. Foreign key indexes are not automatically
+-- created, but if they're unused, removing them reduces write overhead.
 
