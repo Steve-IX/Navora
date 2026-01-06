@@ -288,7 +288,11 @@ export class PlacesService {
     return categoryMap[category] || null;
   }
 
-  private mapSearchCategoryToOurs(searchCategory: string): string | undefined {
+  private mapSearchCategoryToOurs(searchCategory: string | string[] | any): string | undefined {
+    if (!searchCategory) {
+      return undefined;
+    }
+
     const reverseMap: Record<string, string> = {
       restaurant: 'restaurant',
       food: 'restaurant',
@@ -322,8 +326,18 @@ export class PlacesService {
       train_station: 'train_station',
     };
     
-    // Handle comma-separated categories
-    const categories = searchCategory.split(',').map(c => c.trim().toLowerCase());
+    // Handle array of categories
+    if (Array.isArray(searchCategory)) {
+      for (const cat of searchCategory) {
+        const normalized = String(cat).trim().toLowerCase();
+        if (reverseMap[normalized]) return reverseMap[normalized];
+      }
+      return undefined;
+    }
+    
+    // Handle string (comma-separated or single)
+    const categoryStr = String(searchCategory);
+    const categories = categoryStr.split(',').map(c => c.trim().toLowerCase());
     for (const cat of categories) {
       if (reverseMap[cat]) return reverseMap[cat];
     }
