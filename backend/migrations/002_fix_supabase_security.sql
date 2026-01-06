@@ -7,8 +7,10 @@
 -- This is a read-only PostGIS system table, so we enable RLS with a public read policy
 ALTER TABLE IF EXISTS public.spatial_ref_sys ENABLE ROW LEVEL SECURITY;
 
--- Create a read-only policy for spatial_ref_sys (PostGIS needs to read this table)
-CREATE POLICY IF NOT EXISTS "Allow public read access to spatial_ref_sys"
+-- Drop policy if it exists, then create a read-only policy for spatial_ref_sys
+-- (PostGIS needs to read this table)
+DROP POLICY IF EXISTS "Allow public read access to spatial_ref_sys" ON public.spatial_ref_sys;
+CREATE POLICY "Allow public read access to spatial_ref_sys"
   ON public.spatial_ref_sys
   FOR SELECT
   USING (true);
