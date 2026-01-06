@@ -18,13 +18,13 @@
 CREATE POLICY "Users can view own profile"
   ON public.users
   FOR SELECT
-  USING (auth.uid()::text = id::text);
+  USING ((select auth.uid())::text = id::text);
 
 -- Users can update their own email (if needed)
 CREATE POLICY "Users can update own profile"
   ON public.users
   FOR UPDATE
-  USING (auth.uid()::text = id::text);
+  USING ((select auth.uid())::text = id::text);
 
 -- ============================================================================
 -- 2. User Profiles Table Policies
@@ -33,7 +33,7 @@ CREATE POLICY "Users can update own profile"
 CREATE POLICY "Users can view own profile"
   ON public.user_profiles
   FOR SELECT
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can view profiles of friends (if location sharing is enabled)
 -- Note: This requires checking friendships, which is complex in RLS
@@ -44,13 +44,13 @@ CREATE POLICY "Users can view own profile"
 CREATE POLICY "Users can update own profile"
   ON public.user_profiles
   FOR UPDATE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can insert their own profile
 CREATE POLICY "Users can insert own profile"
   ON public.user_profiles
   FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK ((select auth.uid())::text = user_id::text);
 
 -- ============================================================================
 -- 3. Friendships Table Policies
@@ -60,29 +60,29 @@ CREATE POLICY "Users can view own friendships"
   ON public.friendships
   FOR SELECT
   USING (
-    auth.uid()::text = requester_id::text OR 
-    auth.uid()::text = addressee_id::text
+    (select auth.uid())::text = requester_id::text OR 
+    (select auth.uid())::text = addressee_id::text
   );
 
 -- Users can create friendships where they are the requester
 CREATE POLICY "Users can create friendships as requester"
   ON public.friendships
   FOR INSERT
-  WITH CHECK (auth.uid()::text = requester_id::text);
+  WITH CHECK ((select auth.uid())::text = requester_id::text);
 
 -- Users can update friendships where they are the addressee (to accept/decline)
 CREATE POLICY "Users can update received friend requests"
   ON public.friendships
   FOR UPDATE
-  USING (auth.uid()::text = addressee_id::text);
+  USING ((select auth.uid())::text = addressee_id::text);
 
 -- Users can delete friendships where they are involved
 CREATE POLICY "Users can delete own friendships"
   ON public.friendships
   FOR DELETE
   USING (
-    auth.uid()::text = requester_id::text OR 
-    auth.uid()::text = addressee_id::text
+    (select auth.uid())::text = requester_id::text OR 
+    (select auth.uid())::text = addressee_id::text
   );
 
 -- ============================================================================
@@ -93,8 +93,8 @@ CREATE POLICY "Users can view relevant location shares"
   ON public.location_shares
   FOR SELECT
   USING (
-    auth.uid()::text = sharer_id::text OR 
-    auth.uid()::text = shared_with_id::text OR
+    (select auth.uid())::text = sharer_id::text OR 
+    (select auth.uid())::text = shared_with_id::text OR
     shared_with_id IS NULL  -- Public shares
   );
 
@@ -102,13 +102,13 @@ CREATE POLICY "Users can view relevant location shares"
 CREATE POLICY "Users can create location shares"
   ON public.location_shares
   FOR INSERT
-  WITH CHECK (auth.uid()::text = sharer_id::text);
+  WITH CHECK ((select auth.uid())::text = sharer_id::text);
 
 -- Users can delete their own location shares
 CREATE POLICY "Users can delete own location shares"
   ON public.location_shares
   FOR DELETE
-  USING (auth.uid()::text = sharer_id::text);
+  USING ((select auth.uid())::text = sharer_id::text);
 
 -- ============================================================================
 -- 5. Check-ins Table Policies
@@ -117,19 +117,19 @@ CREATE POLICY "Users can delete own location shares"
 CREATE POLICY "Users can view own check-ins"
   ON public.check_ins
   FOR SELECT
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can create their own check-ins
 CREATE POLICY "Users can create own check-ins"
   ON public.check_ins
   FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK ((select auth.uid())::text = user_id::text);
 
 -- Users can delete their own check-ins
 CREATE POLICY "Users can delete own check-ins"
   ON public.check_ins
   FOR DELETE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- ============================================================================
 -- 6. Place Reviews Table Policies
@@ -144,19 +144,19 @@ CREATE POLICY "Users can view all reviews"
 CREATE POLICY "Users can create own reviews"
   ON public.place_reviews
   FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK ((select auth.uid())::text = user_id::text);
 
 -- Users can update their own reviews
 CREATE POLICY "Users can update own reviews"
   ON public.place_reviews
   FOR UPDATE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can delete their own reviews
 CREATE POLICY "Users can delete own reviews"
   ON public.place_reviews
   FOR DELETE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- ============================================================================
 -- 7. Saved Locations Table Policies
@@ -165,25 +165,25 @@ CREATE POLICY "Users can delete own reviews"
 CREATE POLICY "Users can view own saved locations"
   ON public.saved_locations
   FOR SELECT
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can create their own saved locations
 CREATE POLICY "Users can create own saved locations"
   ON public.saved_locations
   FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK ((select auth.uid())::text = user_id::text);
 
 -- Users can update their own saved locations
 CREATE POLICY "Users can update own saved locations"
   ON public.saved_locations
   FOR UPDATE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can delete their own saved locations
 CREATE POLICY "Users can delete own saved locations"
   ON public.saved_locations
   FOR DELETE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- ============================================================================
 -- 8. Route History Table Policies
@@ -192,19 +192,19 @@ CREATE POLICY "Users can delete own saved locations"
 CREATE POLICY "Users can view own route history"
   ON public.route_history
   FOR SELECT
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can create their own route history
 CREATE POLICY "Users can create own route history"
   ON public.route_history
   FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK ((select auth.uid())::text = user_id::text);
 
 -- Users can delete their own route history
 CREATE POLICY "Users can delete own route history"
   ON public.route_history
   FOR DELETE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- ============================================================================
 -- 9. Shared Location Lists Table Policies
@@ -215,26 +215,26 @@ CREATE POLICY "Users can view location lists"
   FOR SELECT
   USING (
     is_public = true OR 
-    auth.uid()::text = user_id::text
+    (select auth.uid())::text = user_id::text
   );
 
 -- Users can create location lists
 CREATE POLICY "Users can create location lists"
   ON public.shared_location_lists
   FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK ((select auth.uid())::text = user_id::text);
 
 -- Users can update their own location lists
 CREATE POLICY "Users can update own location lists"
   ON public.shared_location_lists
   FOR UPDATE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- Users can delete their own location lists
 CREATE POLICY "Users can delete own location lists"
   ON public.shared_location_lists
   FOR DELETE
-  USING (auth.uid()::text = user_id::text);
+  USING ((select auth.uid())::text = user_id::text);
 
 -- ============================================================================
 -- 10. Location List Items Table Policies
@@ -247,7 +247,7 @@ CREATE POLICY "Users can view location list items"
     EXISTS (
       SELECT 1 FROM public.shared_location_lists
       WHERE shared_location_lists.id = location_list_items.list_id
-      AND (shared_location_lists.is_public = true OR shared_location_lists.user_id::text = auth.uid()::text)
+      AND (shared_location_lists.is_public = true OR shared_location_lists.user_id::text = (select auth.uid())::text)
     )
   );
 
@@ -259,7 +259,7 @@ CREATE POLICY "Users can create location list items"
     EXISTS (
       SELECT 1 FROM public.shared_location_lists
       WHERE shared_location_lists.id = location_list_items.list_id
-      AND shared_location_lists.user_id::text = auth.uid()::text
+      AND shared_location_lists.user_id::text = (select auth.uid())::text
     )
   );
 
@@ -271,7 +271,7 @@ CREATE POLICY "Users can update location list items"
     EXISTS (
       SELECT 1 FROM public.shared_location_lists
       WHERE shared_location_lists.id = location_list_items.list_id
-      AND shared_location_lists.user_id::text = auth.uid()::text
+      AND shared_location_lists.user_id::text = (select auth.uid())::text
     )
   );
 
@@ -283,7 +283,7 @@ CREATE POLICY "Users can delete location list items"
     EXISTS (
       SELECT 1 FROM public.shared_location_lists
       WHERE shared_location_lists.id = location_list_items.list_id
-      AND shared_location_lists.user_id::text = auth.uid()::text
+      AND shared_location_lists.user_id::text = (select auth.uid())::text
     )
   );
 
@@ -295,11 +295,11 @@ CREATE POLICY "Users can view trips they participate in"
   ON public.group_trips
   FOR SELECT
   USING (
-    organizer_id::text = auth.uid()::text OR
+    organizer_id::text = (select auth.uid())::text OR
     EXISTS (
       SELECT 1 FROM public.trip_participants
       WHERE trip_participants.trip_id = group_trips.id
-      AND trip_participants.user_id::text = auth.uid()::text
+      AND trip_participants.user_id::text = (select auth.uid())::text
     )
   );
 
@@ -307,19 +307,19 @@ CREATE POLICY "Users can view trips they participate in"
 CREATE POLICY "Users can create trips"
   ON public.group_trips
   FOR INSERT
-  WITH CHECK (auth.uid()::text = organizer_id::text);
+  WITH CHECK ((select auth.uid())::text = organizer_id::text);
 
 -- Organizers can update trips
 CREATE POLICY "Organizers can update trips"
   ON public.group_trips
   FOR UPDATE
-  USING (auth.uid()::text = organizer_id::text);
+  USING ((select auth.uid())::text = organizer_id::text);
 
 -- Organizers can delete trips
 CREATE POLICY "Organizers can delete trips"
   ON public.group_trips
   FOR DELETE
-  USING (auth.uid()::text = organizer_id::text);
+  USING ((select auth.uid())::text = organizer_id::text);
 
 -- ============================================================================
 -- 12. Trip Participants Table Policies
@@ -329,16 +329,16 @@ CREATE POLICY "Users can view trip participants"
   ON public.trip_participants
   FOR SELECT
   USING (
-    user_id::text = auth.uid()::text OR
+    user_id::text = (select auth.uid())::text OR
     EXISTS (
       SELECT 1 FROM public.group_trips
       WHERE group_trips.id = trip_participants.trip_id
       AND (
-        group_trips.organizer_id::text = auth.uid()::text OR
+        group_trips.organizer_id::text = (select auth.uid())::text OR
         EXISTS (
           SELECT 1 FROM public.trip_participants tp2
           WHERE tp2.trip_id = trip_participants.trip_id
-          AND tp2.user_id::text = auth.uid()::text
+          AND tp2.user_id::text = (select auth.uid())::text
         )
       )
     )
@@ -352,7 +352,7 @@ CREATE POLICY "Organizers can add trip participants"
     EXISTS (
       SELECT 1 FROM public.group_trips
       WHERE group_trips.id = trip_participants.trip_id
-      AND group_trips.organizer_id::text = auth.uid()::text
+      AND group_trips.organizer_id::text = (select auth.uid())::text
     )
   );
 
@@ -360,18 +360,18 @@ CREATE POLICY "Organizers can add trip participants"
 CREATE POLICY "Users can update own participant status"
   ON public.trip_participants
   FOR UPDATE
-  USING (user_id::text = auth.uid()::text);
+  USING (user_id::text = (select auth.uid())::text);
 
 -- Organizers and participants can remove participants
 CREATE POLICY "Users can remove trip participants"
   ON public.trip_participants
   FOR DELETE
   USING (
-    user_id::text = auth.uid()::text OR
+    user_id::text = (select auth.uid())::text OR
     EXISTS (
       SELECT 1 FROM public.group_trips
       WHERE group_trips.id = trip_participants.trip_id
-      AND group_trips.organizer_id::text = auth.uid()::text
+      AND group_trips.organizer_id::text = (select auth.uid())::text
     )
   );
 
@@ -387,11 +387,11 @@ CREATE POLICY "Users can view trip waypoints"
       SELECT 1 FROM public.group_trips
       WHERE group_trips.id = trip_waypoints.trip_id
       AND (
-        group_trips.organizer_id::text = auth.uid()::text OR
+        group_trips.organizer_id::text = (select auth.uid())::text OR
         EXISTS (
           SELECT 1 FROM public.trip_participants
           WHERE trip_participants.trip_id = trip_waypoints.trip_id
-          AND trip_participants.user_id::text = auth.uid()::text
+          AND trip_participants.user_id::text = (select auth.uid())::text
           AND trip_participants.status = 'accepted'
         )
       )
@@ -403,11 +403,11 @@ CREATE POLICY "Participants can add trip waypoints"
   ON public.trip_waypoints
   FOR INSERT
   WITH CHECK (
-    added_by_id::text = auth.uid()::text AND
+    added_by_id::text = (select auth.uid())::text AND
     EXISTS (
       SELECT 1 FROM public.trip_participants
       WHERE trip_participants.trip_id = trip_waypoints.trip_id
-      AND trip_participants.user_id::text = auth.uid()::text
+      AND trip_participants.user_id::text = (select auth.uid())::text
       AND trip_participants.status = 'accepted'
     )
   );
@@ -417,11 +417,11 @@ CREATE POLICY "Users can update trip waypoints"
   ON public.trip_waypoints
   FOR UPDATE
   USING (
-    added_by_id::text = auth.uid()::text OR
+    added_by_id::text = (select auth.uid())::text OR
     EXISTS (
       SELECT 1 FROM public.group_trips
       WHERE group_trips.id = trip_waypoints.trip_id
-      AND group_trips.organizer_id::text = auth.uid()::text
+      AND group_trips.organizer_id::text = (select auth.uid())::text
     )
   );
 
@@ -430,11 +430,11 @@ CREATE POLICY "Users can delete trip waypoints"
   ON public.trip_waypoints
   FOR DELETE
   USING (
-    added_by_id::text = auth.uid()::text OR
+    added_by_id::text = (select auth.uid())::text OR
     EXISTS (
       SELECT 1 FROM public.group_trips
       WHERE group_trips.id = trip_waypoints.trip_id
-      AND group_trips.organizer_id::text = auth.uid()::text
+      AND group_trips.organizer_id::text = (select auth.uid())::text
     )
   );
 
