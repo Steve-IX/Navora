@@ -59,7 +59,20 @@ SELECT PostGIS_version();
 
 4. You should see the PostGIS version number
 
-## Step 4: Update Railway Environment Variables
+## Step 4: Run Security Migration
+
+After enabling PostGIS, run the security migration to fix Supabase linter warnings:
+
+1. Go to **SQL Editor** in your Supabase dashboard
+2. Click **"New query"**
+3. Copy and run the contents of `backend/migrations/002_fix_supabase_security.sql`
+
+This migration will:
+- Enable RLS on `spatial_ref_sys` (PostGIS system table)
+- Remove overly permissive service role policies (service role bypasses RLS anyway)
+- Document the PostGIS extension location warning (can be safely ignored)
+
+## Step 5: Update Railway Environment Variables
 
 Update your Railway backend service environment variables:
 
@@ -93,7 +106,7 @@ FRONTEND_URL=https://your-frontend.up.railway.app
 
 **Important**: Replace `[PROJECT-REF]` with your actual Supabase project reference (found in your connection string).
 
-## Step 5: Deploy and Verify
+## Step 6: Deploy and Verify
 
 1. Commit and push your changes (they're already done!)
 2. Railway will automatically redeploy
@@ -111,7 +124,7 @@ FRONTEND_URL=https://your-frontend.up.railway.app
    - `place_reviews`
    - etc.
 
-## Step 6: Test Geographic Features
+## Step 7: Test Geographic Features
 
 After deployment, test that PostGIS is working:
 
@@ -119,6 +132,16 @@ After deployment, test that PostGIS is working:
 2. Test place reviews with coordinates
 3. Verify check-ins work
 4. All geographic features should now work properly!
+
+## Security Best Practices
+
+After running the security migration, your database will have:
+- ✅ RLS enabled on all user tables
+- ✅ RLS enabled on `spatial_ref_sys` (PostGIS system table)
+- ✅ No overly permissive service role policies
+- ⚠️ PostGIS extension in public schema (warning can be safely ignored)
+
+**Note**: The service role in Supabase bypasses RLS by default, so removing the overly permissive policies won't affect your backend functionality.
 
 ## Connection Pooling (Optional)
 
