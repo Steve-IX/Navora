@@ -53,25 +53,50 @@ DROP POLICY IF EXISTS "Service role has full access to user_profiles" ON public.
 DROP POLICY IF EXISTS "Service role has full access to users" ON public.users;
 
 -- ============================================================================
--- 3. PostGIS Extension Location (WARNING - Manual Action Required)
+-- 3. Move PostGIS Extension to Different Schema (OPTIONAL - Advanced)
 -- ============================================================================
 -- The PostGIS extension is installed in the public schema, which triggers a warning.
--- Moving it to another schema is complex and may break functionality.
+-- Moving it to another schema will fix the warning but requires careful handling.
 -- 
--- If you need to move PostGIS to a different schema, you would need to:
--- 1. Create a new schema (e.g., 'extensions')
--- 2. Move the extension: ALTER EXTENSION postgis SET SCHEMA extensions;
--- 3. Update all references to PostGIS functions
+-- WARNING: This operation is complex and may break functionality if not done correctly.
+-- Only proceed if you understand the implications and have tested in a development environment.
 -- 
--- This is NOT recommended unless you have a specific security requirement.
--- The warning can be safely ignored for most use cases.
+-- Uncomment the following lines to move PostGIS to a separate schema:
+/*
+DO $$
+BEGIN
+  -- Create a schema for extensions
+  CREATE SCHEMA IF NOT EXISTS extensions;
+  
+  -- Move PostGIS extension to the extensions schema
+  -- This will move all PostGIS functions, types, and tables
+  ALTER EXTENSION postgis SET SCHEMA extensions;
+  
+  -- Update search_path to include extensions schema
+  -- This ensures PostGIS functions can be found without schema qualification
+  ALTER DATABASE current_database() SET search_path = public, extensions;
+  
+  RAISE NOTICE 'PostGIS extension moved to extensions schema successfully';
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Could not move PostGIS extension: %. This is normal if you do not have sufficient privileges.', SQLERRM;
+END $$;
+*/
+
+-- ============================================================================
+-- 4. Known Limitations
+-- ============================================================================
 -- 
--- To suppress the warning, you can move PostGIS to a different schema:
--- CREATE SCHEMA IF NOT EXISTS extensions;
--- ALTER EXTENSION postgis SET SCHEMA extensions;
+-- 1. spatial_ref_sys table RLS:
+--    - The spatial_ref_sys table is owned by the PostGIS extension
+--    - Regular users cannot enable RLS on this table in managed databases
+--    - This is a known limitation and the warning can be safely ignored
+--    - The table is read-only and poses minimal security risk
 -- 
--- WARNING: This may break existing queries that reference PostGIS functions
--- without schema qualification. Test thoroughly before applying in production.
+-- 2. PostGIS Extension Location:
+--    - PostGIS is installed in the public schema by default
+--    - Moving it requires superuser privileges and may break queries
+--    - The warning can be safely ignored for most use cases
+--    - If you need to fix it, uncomment section 3 above (with caution)
 
 -- ============================================================================
 -- Notes:

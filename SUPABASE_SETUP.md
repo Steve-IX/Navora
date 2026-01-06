@@ -137,11 +137,34 @@ After deployment, test that PostGIS is working:
 
 After running the security migration, your database will have:
 - ✅ RLS enabled on all user tables
-- ✅ RLS enabled on `spatial_ref_sys` (PostGIS system table)
 - ✅ No overly permissive service role policies
+- ⚠️ `spatial_ref_sys` RLS warning (known limitation - can be safely ignored)
 - ⚠️ PostGIS extension in public schema (warning can be safely ignored)
 
+### Known Limitations
+
+1. **`spatial_ref_sys` table RLS**: 
+   - This PostGIS system table is owned by the extension and cannot be modified by regular users
+   - The warning can be safely ignored as the table is read-only
+   - This is a known limitation in managed databases like Supabase
+
+2. **PostGIS Extension Location**:
+   - PostGIS is installed in the public schema by default
+   - Moving it requires superuser privileges (see optional migration below)
+   - The warning can be safely ignored for most use cases
+
 **Note**: The service role in Supabase bypasses RLS by default, so removing the overly permissive policies won't affect your backend functionality.
+
+### Optional: Move PostGIS Extension (Advanced)
+
+If you want to fix the PostGIS extension location warning, you can run the optional migration:
+
+1. Go to **SQL Editor** in your Supabase dashboard
+2. Run `backend/migrations/003_move_postgis_extension.sql`
+3. **Important**: Test your application thoroughly after running this migration
+4. You may need to update queries that reference PostGIS functions
+
+**Warning**: This is an advanced operation. Only proceed if you understand the implications and have tested in a development environment.
 
 ## Connection Pooling (Optional)
 
