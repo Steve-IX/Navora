@@ -327,6 +327,14 @@ export const placesService = {
   },
 
   async getPlaceDetails(placeId: string): Promise<Place> {
+    // Check if place ID is in old format or generated format that can't be retrieved
+    const isOldFormatId = placeId.startsWith('dXJuOm1ieHBvaTo');
+    const isGeneratedId = placeId.startsWith('place-') && !placeId.includes('mapbox');
+    
+    if (isOldFormatId || isGeneratedId) {
+      throw new Error('Place details not available. This place ID cannot be retrieved.');
+    }
+    
     if (IS_DEMO_MODE) {
       if (!MAPBOX_TOKEN) {
         throw new Error('Mapbox token not configured');

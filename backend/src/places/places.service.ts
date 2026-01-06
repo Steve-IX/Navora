@@ -26,11 +26,15 @@ export class PlacesService {
     limit?: number;
   }) {
     try {
+      // Validate and set default limit (Mapbox Search API allows 1-10 for forward search)
+      let limit = options?.limit || 10;
+      limit = Math.max(1, Math.min(limit, 10));
+      
       // Use Mapbox Search API for forward search
       const params = new URLSearchParams({
         q: query,
         access_token: this.mapboxAccessToken,
-        limit: (options?.limit || 10).toString(),
+        limit: limit.toString(),
         language: 'en',
       });
 
@@ -69,11 +73,19 @@ export class PlacesService {
       // Mapbox Search API uses mapbox_id which is different format
       // The retrieve endpoint only works with mapbox_id from Search API
       
-      // If this is a Mapbox URN (old geocoding API format), we can't retrieve it
+      // If this is a Mapbox URN (old geocoding API format) or a generated ID, we can't retrieve it
       // Return 404 with helpful message
       if (placeId.startsWith('dXJuOm1ieHBvaTo')) {
         throw new HttpException(
           'Place details not available. This place ID uses an older format that cannot be retrieved. Please search for the place again.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      
+      // Generated IDs (starting with 'place-') are for places without mapbox_id and can't be retrieved
+      if (placeId.startsWith('place-') && !placeId.includes('mapbox')) {
+        throw new HttpException(
+          'Place details not available. This place does not have detailed information available.',
           HttpStatus.NOT_FOUND,
         );
       }
@@ -142,14 +154,24 @@ export class PlacesService {
     limit?: number;
   }) {
     try {
-      const limit = options?.limit || 20;
+      // Validate and set default limit
+      let limit = options?.limit || 20;
+      
+      // Validate limit range
+      if (options?.category) {
+        // Category searches: limit must be between 1 and 10
+        limit = Math.max(1, Math.min(limit, 10));
+      } else {
+        // Non-category searches: limit must be between 1 and 20
+        limit = Math.max(1, Math.min(limit, 20));
+      }
       
       // Use Mapbox Search API category endpoint for nearby POI searches
       if (options?.category) {
         const mapboxCategory = this.mapCategoryToSearchCategory(options.category);
         if (mapboxCategory) {
-          // Category endpoint has a max limit of 10
-          const categoryLimit = Math.min(limit, 10);
+          // Category endpoint has a max limit of 10 (already validated above)
+          const categoryLimit = limit;
           const params = new URLSearchParams({
             access_token: this.mapboxAccessToken,
             proximity: `${coordinates.longitude},${coordinates.latitude}`,
@@ -280,8 +302,25 @@ export class PlacesService {
     const mapboxId = properties.mapbox_id;
     const originalId = feature.id || `place-${Date.now()}`;
     
+    // Check if originalId is an old-format ID (starts with 'dXJuOm1ieHBvaTo')
+    // These IDs cannot be retrieved via the retrieve endpoint
+    const isOldFormatId = originalId && originalId.startsWith('dXJuOm1ieHBvaTo');
+    
+    // If we have mapbox_id, use it. Otherwise, if originalId is old-format, generate a new ID
+    // This ensures we never return old-format IDs that can't be retrieved
+    let placeId: string;
+    if (mapboxId) {
+      placeId = mapboxId;
+    } else if (isOldFormatId) {
+      // Generate a stable ID based on coordinates and name for old-format IDs
+      // This allows us to identify the place but won't work with retrieve endpoint
+      placeId = `place-${coords.latitude.toFixed(6)}-${coords.longitude.toFixed(6)}-${placeName.replace(/\s+/g, '-').toLowerCase()}`;
+    } else {
+      placeId = originalId;
+    }
+    
     const result: any = {
-      id: mapboxId || originalId, // Use mapbox_id if available for better retrieval
+      id: placeId, // Use mapbox_id if available, otherwise use safe ID
       originalId: originalId, // Keep original ID in case we need it
       mapboxId: mapboxId, // Store mapbox_id separately for retrieval
       name: placeName,

@@ -2,7 +2,7 @@ import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
 import { PlacesService } from './places.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
-import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsEnum, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class SearchPlacesDto {
@@ -26,6 +26,8 @@ class SearchPlacesDto {
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @Min(1)
+  @Max(10)
   limit?: number;
 }
 
@@ -50,6 +52,8 @@ class NearbyPlacesDto {
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @Min(1)
+  @Max(20)
   limit?: number;
 }
 

@@ -51,7 +51,7 @@ export const PlaceSearch: React.FC = () => {
         query: searchQuery || category || '',
         category: category || undefined,
         coordinates: center,
-        limit: 20,
+        limit: 10, // Backend searchPlaces endpoint has max limit of 10
       });
       setPlaces(results);
     } catch (err: any) {

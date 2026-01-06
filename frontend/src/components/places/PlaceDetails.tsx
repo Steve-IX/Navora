@@ -24,18 +24,46 @@ export const PlaceDetails: React.FC<PlaceDetailsProps> = ({ place, onClose }) =>
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
   useEffect(() => {
-    // Fetch detailed place information if not already loaded
-    if (!place.photos || !place.description) {
-      placesService.getPlaceDetails(place.id)
-        .then((details) => {
-          setDetailedPlace(details);
-        })
-        .catch((error) => {
-          console.error('Failed to load place details:', error);
-          setDetailedPlace(place); // Fallback to basic place info
-        });
+    // Check if place ID is in old format or generated format that can't be retrieved
+    const isOldFormatId = place.id.startsWith('dXJuOm1ieHBvaTo');
+    const isGeneratedId = place.id.startsWith('place-') && !place.id.includes('mapbox');
+    
+    // Skip API call if:
+    // 1. Place already has required details
+    // 2. Place ID is in old format (can't be retrieved)
+    // 3. Place ID is generated (doesn't have mapbox_id)
+    if (place.photos && place.description) {
+      // Already has details, no need to fetch
+      return;
     }
-  }, [place.id]);
+    
+    if (isOldFormatId || isGeneratedId) {
+      // Can't retrieve details for these IDs, use basic place info
+      setDetailedPlace(place);
+      return;
+    }
+    
+    // Fetch detailed place information
+    placesService.getPlaceDetails(place.id)
+      .then((details) => {
+        setDetailedPlace(details);
+      })
+      .catch((error) => {
+        // Handle 404 and other errors gracefully
+        if (error.response?.status === 404 || error.message?.includes('404')) {
+          console.warn('Place details not available for this location');
+        } else {
+          console.error('Failed to load place details:', error);
+        }
+        // Fallback to basic place info - ensure we have at least basic details
+        setDetailedPlace({
+          ...place,
+          // Add minimal details if missing
+          photos: place.photos || [],
+          description: place.description || `${place.name}. ${place.address || 'Location information available.'}`,
+        });
+      });
+  }, [place.id, place.photos, place.description, place.name, place.address]);
 
   const displayPlace = detailedPlace || place;
 

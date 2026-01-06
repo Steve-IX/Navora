@@ -44,24 +44,38 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
 
   const { setCenter: setMapCenter, addMarker, removeMarker } = useMapStore();
   
-  // Track last fetched location and debounce timer
+  // Track last fetched location, category, and debounce timer
   const lastFetchedLocation = useRef<{ lat: number; lng: number } | null>(null);
+  const lastFetchedCategory = useRef<string | null>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const MIN_DISTANCE_THRESHOLD = 100; // Only refetch if moved at least 100 meters
+
+  // Update selectedCategory when category prop changes
+  useEffect(() => {
+    if (category !== selectedCategory) {
+      setSelectedCategory(category || null);
+    }
+  }, [category]);
 
   useEffect(() => {
     if (center.latitude === 0 && center.longitude === 0) {
       return;
     }
 
-    // Check if we need to refetch based on distance moved
-    const shouldRefetch = !lastFetchedLocation.current ||
-      calculateDistance(
-        lastFetchedLocation.current.lat,
-        lastFetchedLocation.current.lng,
-        center.latitude,
-        center.longitude
-      ) > MIN_DISTANCE_THRESHOLD;
+    // Check if we need to refetch based on distance moved or category changed
+    const distanceMoved = lastFetchedLocation.current
+      ? calculateDistance(
+          lastFetchedLocation.current.lat,
+          lastFetchedLocation.current.lng,
+          center.latitude,
+          center.longitude
+        )
+      : Infinity;
+    
+    const categoryChanged = lastFetchedCategory.current !== selectedCategory;
+    const shouldRefetch = !lastFetchedLocation.current || 
+      distanceMoved > MIN_DISTANCE_THRESHOLD ||
+      categoryChanged;
 
     if (shouldRefetch) {
       // Clear existing debounce timer
@@ -76,6 +90,7 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
           lat: center.latitude,
           lng: center.longitude,
         };
+        lastFetchedCategory.current = selectedCategory;
       }, 500);
     }
 
@@ -124,7 +139,9 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
 
   const handleCategoryChange = (categoryId: string | null) => {
     setSelectedCategory(categoryId);
-    // Reset last fetched location when category changes to force immediate refetch
+    // Reset last fetched category to force immediate refetch
+    lastFetchedCategory.current = null;
+    // Also reset location to ensure refetch happens
     lastFetchedLocation.current = null;
   };
 
