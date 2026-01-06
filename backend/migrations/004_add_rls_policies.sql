@@ -14,6 +14,10 @@
 -- ============================================================================
 -- 1. Users Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own profile" ON public.users;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.users;
+
 -- Users can only see their own user record
 CREATE POLICY "Users can view own profile"
   ON public.users
@@ -29,6 +33,11 @@ CREATE POLICY "Users can update own profile"
 -- ============================================================================
 -- 2. User Profiles Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own profile" ON public.user_profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.user_profiles;
+
 -- Users can view their own profile
 CREATE POLICY "Users can view own profile"
   ON public.user_profiles
@@ -55,6 +64,12 @@ CREATE POLICY "Users can insert own profile"
 -- ============================================================================
 -- 3. Friendships Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own friendships" ON public.friendships;
+DROP POLICY IF EXISTS "Users can create friendships as requester" ON public.friendships;
+DROP POLICY IF EXISTS "Users can update received friend requests" ON public.friendships;
+DROP POLICY IF EXISTS "Users can delete own friendships" ON public.friendships;
+
 -- Users can view friendships where they are the requester or addressee
 CREATE POLICY "Users can view own friendships"
   ON public.friendships
@@ -88,6 +103,11 @@ CREATE POLICY "Users can delete own friendships"
 -- ============================================================================
 -- 4. Location Shares Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view relevant location shares" ON public.location_shares;
+DROP POLICY IF EXISTS "Users can create location shares" ON public.location_shares;
+DROP POLICY IF EXISTS "Users can delete own location shares" ON public.location_shares;
+
 -- Users can view location shares shared with them or shared by them
 CREATE POLICY "Users can view relevant location shares"
   ON public.location_shares
@@ -113,6 +133,11 @@ CREATE POLICY "Users can delete own location shares"
 -- ============================================================================
 -- 5. Check-ins Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own check-ins" ON public.check_ins;
+DROP POLICY IF EXISTS "Users can create own check-ins" ON public.check_ins;
+DROP POLICY IF EXISTS "Users can delete own check-ins" ON public.check_ins;
+
 -- Users can view their own check-ins
 CREATE POLICY "Users can view own check-ins"
   ON public.check_ins
@@ -134,6 +159,12 @@ CREATE POLICY "Users can delete own check-ins"
 -- ============================================================================
 -- 6. Place Reviews Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view all reviews" ON public.place_reviews;
+DROP POLICY IF EXISTS "Users can create own reviews" ON public.place_reviews;
+DROP POLICY IF EXISTS "Users can update own reviews" ON public.place_reviews;
+DROP POLICY IF EXISTS "Users can delete own reviews" ON public.place_reviews;
+
 -- Users can view all reviews (public)
 CREATE POLICY "Users can view all reviews"
   ON public.place_reviews
@@ -161,6 +192,12 @@ CREATE POLICY "Users can delete own reviews"
 -- ============================================================================
 -- 7. Saved Locations Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own saved locations" ON public.saved_locations;
+DROP POLICY IF EXISTS "Users can create own saved locations" ON public.saved_locations;
+DROP POLICY IF EXISTS "Users can update own saved locations" ON public.saved_locations;
+DROP POLICY IF EXISTS "Users can delete own saved locations" ON public.saved_locations;
+
 -- Users can view their own saved locations
 CREATE POLICY "Users can view own saved locations"
   ON public.saved_locations
@@ -188,6 +225,11 @@ CREATE POLICY "Users can delete own saved locations"
 -- ============================================================================
 -- 8. Route History Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own route history" ON public.route_history;
+DROP POLICY IF EXISTS "Users can create own route history" ON public.route_history;
+DROP POLICY IF EXISTS "Users can delete own route history" ON public.route_history;
+
 -- Users can view their own route history
 CREATE POLICY "Users can view own route history"
   ON public.route_history
@@ -209,6 +251,12 @@ CREATE POLICY "Users can delete own route history"
 -- ============================================================================
 -- 9. Shared Location Lists Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view location lists" ON public.shared_location_lists;
+DROP POLICY IF EXISTS "Users can create location lists" ON public.shared_location_lists;
+DROP POLICY IF EXISTS "Users can update own location lists" ON public.shared_location_lists;
+DROP POLICY IF EXISTS "Users can delete own location lists" ON public.shared_location_lists;
+
 -- Users can view public lists or lists they own
 CREATE POLICY "Users can view location lists"
   ON public.shared_location_lists
@@ -239,6 +287,12 @@ CREATE POLICY "Users can delete own location lists"
 -- ============================================================================
 -- 10. Location List Items Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view location list items" ON public.location_list_items;
+DROP POLICY IF EXISTS "Users can create location list items" ON public.location_list_items;
+DROP POLICY IF EXISTS "Users can update location list items" ON public.location_list_items;
+DROP POLICY IF EXISTS "Users can delete location list items" ON public.location_list_items;
+
 -- Users can view items from lists they can access
 CREATE POLICY "Users can view location list items"
   ON public.location_list_items
@@ -290,6 +344,12 @@ CREATE POLICY "Users can delete location list items"
 -- ============================================================================
 -- 11. Group Trips Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view trips they participate in" ON public.group_trips;
+DROP POLICY IF EXISTS "Users can create trips" ON public.group_trips;
+DROP POLICY IF EXISTS "Organizers can update trips" ON public.group_trips;
+DROP POLICY IF EXISTS "Organizers can delete trips" ON public.group_trips;
+
 -- Users can view trips they are participants in
 CREATE POLICY "Users can view trips they participate in"
   ON public.group_trips
@@ -324,6 +384,12 @@ CREATE POLICY "Organizers can delete trips"
 -- ============================================================================
 -- 12. Trip Participants Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view trip participants" ON public.trip_participants;
+DROP POLICY IF EXISTS "Organizers can add trip participants" ON public.trip_participants;
+DROP POLICY IF EXISTS "Users can update own participant status" ON public.trip_participants;
+DROP POLICY IF EXISTS "Users can remove trip participants" ON public.trip_participants;
+
 -- Users can view participants of trips they are in
 CREATE POLICY "Users can view trip participants"
   ON public.trip_participants
@@ -378,6 +444,12 @@ CREATE POLICY "Users can remove trip participants"
 -- ============================================================================
 -- 13. Trip Waypoints Table Policies
 -- ============================================================================
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view trip waypoints" ON public.trip_waypoints;
+DROP POLICY IF EXISTS "Participants can add trip waypoints" ON public.trip_waypoints;
+DROP POLICY IF EXISTS "Users can update trip waypoints" ON public.trip_waypoints;
+DROP POLICY IF EXISTS "Users can delete trip waypoints" ON public.trip_waypoints;
+
 -- Users can view waypoints of trips they participate in
 CREATE POLICY "Users can view trip waypoints"
   ON public.trip_waypoints
