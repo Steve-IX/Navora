@@ -1,0 +1,180 @@
+-- Migration: Optimize Unused Indexes
+-- This migration addresses Supabase performance advisor warnings about unused indexes.
+--
+-- Strategy:
+-- 1. Keep indexes on foreign keys (important for JOINs and referential integrity)
+-- 2. Keep composite indexes that match query patterns
+-- 3. Remove individual indexes that are redundant when composite indexes exist
+-- 4. Keep spatial indexes (important for location queries, even if currently unused)
+-- 5. Keep indexes on commonly filtered columns (status, dates)
+--
+-- Note: Some indexes may show as "unused" because:
+-- - The application is new and hasn't had much traffic
+-- - Queries might use different execution plans
+-- - Indexes will become useful as data grows
+--
+-- We're being conservative and only removing clearly redundant indexes.
+
+-- ============================================================================
+-- 1. User Profiles Table
+-- ============================================================================
+-- user_id is a unique column, so it already has a unique index
+-- The separate IDX_user_profiles_user_id might be redundant, but we'll keep it
+-- as it's a foreign key and might be used in JOINs
+-- DECISION: Keep the index (foreign key, commonly queried)
+
+-- ============================================================================
+-- 2. Friendships Table
+-- ============================================================================
+-- Has composite unique index on (requester_id, addressee_id)
+-- Individual indexes on requester_id, addressee_id, and status might be redundant
+-- However, queries filter by requester_id + status or addressee_id + status
+-- 
+-- Analysis:
+-- - Individual requester_id index: Might be redundant, but useful for JOINs
+-- - Individual addressee_id index: Might be redundant, but useful for JOINs  
+-- - Individual status index: Low cardinality, not very useful alone
+--
+-- DECISION: 
+-- - Keep requester_id and addressee_id indexes (foreign keys, used in JOINs)
+-- - Remove status index (low cardinality, queries use status with requester/addressee)
+DROP INDEX IF EXISTS public."IDX_friendships_status";
+
+-- ============================================================================
+-- 3. Location Shares Table
+-- ============================================================================
+-- Has composite index on (sharer_id, shared_with_id) and separate index on expires_at
+-- Individual indexes on sharer_id and shared_with_id might be redundant
+--
+-- Analysis:
+-- - Individual sharer_id index: Might be redundant, but useful for JOINs
+-- - Individual shared_with_id index: Might be redundant, but useful for JOINs
+-- - expires_at index: Useful for cleanup queries (finding expired shares)
+-- - coordinates spatial index: Important for location queries
+--
+-- DECISION:
+-- - Keep sharer_id and shared_with_id indexes (foreign keys)
+-- - Keep expires_at index (useful for cleanup queries)
+-- - Keep coordinates spatial index (important for location queries)
+
+-- ============================================================================
+-- 4. Trip Participants Table
+-- ============================================================================
+-- Has composite unique index on (trip_id, user_id)
+-- Individual indexes on trip_id and user_id might be redundant
+--
+-- Analysis:
+-- - Individual trip_id index: Might be redundant, but useful for JOINs
+-- - Individual user_id index: Might be redundant, but useful for JOINs
+--
+-- DECISION: Keep both indexes (foreign keys, used in JOINs)
+-- The composite index is for uniqueness, individual indexes help with JOINs
+
+-- ============================================================================
+-- 5. Group Trips Table
+-- ============================================================================
+-- Individual indexes on organizer_id and status
+--
+-- Analysis:
+-- - organizer_id index: Foreign key, useful for JOINs and filtering
+-- - status index: Useful for filtering trips by status
+--
+-- DECISION: Keep both indexes (organizer_id is FK, status is commonly filtered)
+
+-- ============================================================================
+-- 6. Trip Waypoints Table
+-- ============================================================================
+-- Individual indexes on trip_id, added_by_id, trip_order, and coordinates
+--
+-- Analysis:
+-- - trip_id index: Foreign key, useful for JOINs
+-- - added_by_id index: Foreign key, useful for JOINs
+-- - trip_order index: Useful for ordering waypoints
+-- - coordinates spatial index: Important for location queries
+--
+-- DECISION: Keep all indexes (all are useful for queries)
+
+-- ============================================================================
+-- 7. Check-ins Table
+-- ============================================================================
+-- Individual indexes on user_id, created_at, and coordinates
+--
+-- Analysis:
+-- - user_id index: Foreign key, useful for JOINs and filtering
+-- - created_at index: Useful for ordering by date
+-- - coordinates spatial index: Important for location queries
+--
+-- DECISION: Keep all indexes (all are useful for queries)
+-- Consider: A composite index on (user_id, created_at) might be more efficient
+-- for queries that filter by user and order by date, but we'll keep individual
+-- indexes for flexibility
+
+-- ============================================================================
+-- 8. Place Reviews Table
+-- ============================================================================
+-- Individual indexes on user_id, created_at, and coordinates
+--
+-- Analysis:
+-- - user_id index: Foreign key, useful for JOINs and filtering
+-- - created_at index: Useful for ordering by date
+-- - coordinates spatial index: Important for location queries
+--
+-- DECISION: Keep all indexes (all are useful for queries)
+
+-- ============================================================================
+-- 9. Saved Locations Table
+-- ============================================================================
+-- Individual indexes on user_id and coordinates
+--
+-- Analysis:
+-- - user_id index: Foreign key, useful for JOINs and filtering
+-- - coordinates spatial index: Important for location queries
+--
+-- DECISION: Keep both indexes (both are useful for queries)
+
+-- ============================================================================
+-- 10. Route History Table
+-- ============================================================================
+-- Individual index on user_id
+--
+-- Analysis:
+-- - user_id index: Foreign key, useful for JOINs and filtering
+--
+-- DECISION: Keep the index (foreign key, commonly queried)
+
+-- ============================================================================
+-- 11. Shared Location Lists Table
+-- ============================================================================
+-- Individual indexes on user_id and is_public
+--
+-- Analysis:
+-- - user_id index: Foreign key, useful for JOINs and filtering
+-- - is_public index: Useful for filtering public lists
+--
+-- DECISION: Keep both indexes (both are useful for queries)
+
+-- ============================================================================
+-- 12. Location List Items Table
+-- ============================================================================
+-- Individual indexes on list_id, list_order, and coordinates
+--
+-- Analysis:
+-- - list_id index: Foreign key, useful for JOINs
+-- - list_order index: Useful for ordering items
+-- - coordinates spatial index: Important for location queries
+--
+-- DECISION: Keep all indexes (all are useful for queries)
+
+-- ============================================================================
+-- Summary
+-- ============================================================================
+-- We're only removing the friendships.status index as it has low cardinality
+-- and queries always use status in combination with requester_id or addressee_id.
+-- All other indexes are kept because they:
+-- 1. Support foreign key relationships (important for JOINs)
+-- 2. Support common query patterns (filtering, ordering)
+-- 3. Support spatial queries (location-based features)
+--
+-- If indexes continue to show as unused after the application has more traffic,
+-- we can revisit and optimize further.
+
