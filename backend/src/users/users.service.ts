@@ -71,7 +71,7 @@ export class UsersService {
           { searchTerm },
         )
         .andWhere('user.id != :currentUserId', { currentUserId })
-        .andWhere("user.id NOT LIKE 'guest_%'")
+        .andWhere("CAST(user.id AS TEXT) NOT LIKE 'guest_%'")
         .limit(20)
         .getMany();
 
@@ -102,7 +102,7 @@ export class UsersService {
         .createQueryBuilder('user')
         .where('LOWER(user.email) LIKE :searchTerm', { searchTerm })
         .andWhere('user.id != :currentUserId', { currentUserId })
-        .andWhere("user.id NOT LIKE 'guest_%'")
+        .andWhere("CAST(user.id AS TEXT) NOT LIKE 'guest_%'")
         .limit(20)
         .getMany();
 
