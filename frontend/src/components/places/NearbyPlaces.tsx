@@ -152,16 +152,16 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
   return (
     <div className="w-full">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Nearby Places</h3>
-        
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-3">Nearby Places</h3>
+
         {/* Category Filter */}
         <div className="flex gap-2 overflow-x-auto pb-2">
           <button
             onClick={() => handleCategoryChange(null)}
             className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
               selectedCategory === null
-                ? 'bg-primary-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'bg-primary-600 dark:bg-primary-500 text-white'
+                : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200 dark:hover:bg-dark-bg-overlay'
             }`}
           >
             All
@@ -172,8 +172,8 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
               onClick={() => handleCategoryChange(cat.id)}
               className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                 selectedCategory === cat.id
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-primary-600 dark:bg-primary-500 text-white'
+                  : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200 dark:hover:bg-dark-bg-overlay'
               }`}
             >
               <span className="mr-1">{cat.icon}</span>
@@ -186,13 +186,13 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
       {/* Loading */}
       {isLoading && (
         <div className="flex justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
         </div>
       )}
 
       {/* Error */}
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
           {error}
         </div>
       )}
@@ -204,17 +204,17 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
             <button
               key={place.id}
               onClick={() => handlePlaceSelect(place)}
-              className="w-full text-left p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-primary-300 transition-colors"
+              className="w-full text-left p-3 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary hover:border-primary-300 dark:hover:border-primary-500 transition-colors"
             >
               <div className="flex items-start gap-3">
                 <div className="text-2xl flex-shrink-0">{place.categoryIcon || '📍'}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900 truncate">{place.name}</div>
+                  <div className="font-medium text-gray-900 dark:text-dark-text-primary truncate">{place.name}</div>
                   {place.address && (
-                    <div className="text-sm text-gray-500 truncate mt-1">{place.address}</div>
+                    <div className="text-sm text-gray-500 dark:text-dark-text-secondary truncate mt-1">{place.address}</div>
                   )}
                   {place.category && (
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-400 dark:text-dark-text-muted mt-1">
                       {PLACE_CATEGORIES.find((c) => c.id === place.category)?.name}
                     </div>
                   )}
@@ -226,7 +226,7 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
       )}
 
       {!isLoading && !error && nearbyPlaces.length === 0 && (
-        <div className="text-center py-8 text-gray-500">No nearby places found</div>
+        <div className="text-center py-8 text-gray-500 dark:text-dark-text-muted">No nearby places found</div>
       )}
     </div>
   );

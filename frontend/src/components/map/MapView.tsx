@@ -3,6 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useMapStore } from '@/stores/mapStore';
 import { useLocationStore } from '@/stores/locationStore';
+import { useUIStore } from '@/stores/uiStore';
 import { Coordinates } from '@shared/types/geocoding';
 import { MapLayer } from '@shared/types/map';
 
@@ -37,6 +38,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
   } = useMapStore();
 
   const { currentLocation, accuracy, isTracking } = useLocationStore();
+  const { darkMode } = useUIStore();
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -50,7 +52,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: getMapStyle(layer),
+      style: getMapStyle(layer, darkMode),
       center: [center.longitude, center.latitude],
       zoom: zoom,
       bearing: bearing,
@@ -237,10 +239,10 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     });
   };
 
-  // Update map style when layer changes
+  // Update map style when layer or dark mode changes
   useEffect(() => {
     if (map.current && isLoaded) {
-      map.current.setStyle(getMapStyle(layer));
+      map.current.setStyle(getMapStyle(layer, darkMode));
       map.current.once('style.load', () => {
         enable3DBuildings();
         if (trafficEnabled) {
@@ -249,7 +251,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
         setupPoiClickHandler();
       });
     }
-  }, [layer, isLoaded]);
+  }, [layer, darkMode, isLoaded]);
 
   // Update traffic layer
   useEffect(() => {
@@ -779,14 +781,26 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     };
   };
 
-  const getMapStyle = (layerType: MapLayer): string => {
+  const getMapStyle = (layerType: MapLayer, isDark: boolean = false): string => {
     const baseUrl = 'mapbox://styles/mapbox/';
-    const styles: Record<MapLayer, string> = {
+
+    // Dark mode styles
+    if (isDark) {
+      const darkStyles: Record<MapLayer, string> = {
+        standard: `${baseUrl}dark-v11`,
+        satellite: `${baseUrl}satellite-streets-v12`, // Satellite is naturally dark
+        terrain: `${baseUrl}dark-v11`, // Use dark style for terrain in dark mode
+      };
+      return darkStyles[layerType];
+    }
+
+    // Light mode styles
+    const lightStyles: Record<MapLayer, string> = {
       standard: `${baseUrl}streets-v12`,
       satellite: `${baseUrl}satellite-streets-v12`,
       terrain: `${baseUrl}outdoors-v12`,
     };
-    return styles[layerType];
+    return lightStyles[layerType];
   };
 
   const addTrafficLayer = () => {

@@ -14,20 +14,73 @@ interface UIState {
   toggleDarkMode: () => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  sidePanelOpen: false,
-  sidePanelContent: null,
-  bottomSheetOpen: false,
-  bottomSheetContent: null,
-  darkMode: false,
+// Initialize dark mode from localStorage
+const getInitialDarkMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const stored = localStorage.getItem('theme-preference');
+    if (stored === 'dark') return true;
+    if (stored === 'light') return false;
+    // If 'system', check system preference
+    if (stored === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    // Default to system preference if no stored value
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return false;
+  }
+};
 
-  setSidePanelOpen: (open) => set({ sidePanelOpen: open }),
-  setSidePanelContent: (content) =>
-    set({ sidePanelContent: content, sidePanelOpen: content !== null }),
-  toggleSidePanel: () => set((state) => ({ sidePanelOpen: !state.sidePanelOpen })),
-  setBottomSheetOpen: (open) => set({ bottomSheetOpen: open }),
-  setBottomSheetContent: (content) =>
-    set({ bottomSheetContent: content, bottomSheetOpen: content !== null }),
-  toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
-}));
+// Apply dark mode class to document
+const applyDarkMode = (isDark: boolean) => {
+  if (typeof window === 'undefined') return;
+
+  const root = document.documentElement;
+  if (isDark) {
+    root.classList.add('dark');
+  } else {
+    root.classList.remove('dark');
+  }
+
+  // Update meta theme-color for mobile browsers
+  const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+  if (metaThemeColor) {
+    metaThemeColor.setAttribute('content', isDark ? '#0f172a' : '#ffffff');
+  }
+
+  // Persist to localStorage
+  try {
+    localStorage.setItem('theme-preference', isDark ? 'dark' : 'light');
+  } catch (error) {
+    console.warn('Failed to save theme preference:', error);
+  }
+};
+
+export const useUIStore = create<UIState>((set, get) => {
+  // Apply initial dark mode on store creation
+  const initialDarkMode = getInitialDarkMode();
+  applyDarkMode(initialDarkMode);
+
+  return {
+    sidePanelOpen: false,
+    sidePanelContent: null,
+    bottomSheetOpen: false,
+    bottomSheetContent: null,
+    darkMode: initialDarkMode,
+
+    setSidePanelOpen: (open) => set({ sidePanelOpen: open }),
+    setSidePanelContent: (content) =>
+      set({ sidePanelContent: content, sidePanelOpen: content !== null }),
+    toggleSidePanel: () => set((state) => ({ sidePanelOpen: !state.sidePanelOpen })),
+    setBottomSheetOpen: (open) => set({ bottomSheetOpen: open }),
+    setBottomSheetContent: (content) =>
+      set({ bottomSheetContent: content, bottomSheetOpen: content !== null }),
+    toggleDarkMode: () => {
+      const newDarkMode = !get().darkMode;
+      applyDarkMode(newDarkMode);
+      set({ darkMode: newDarkMode });
+    },
+  };
+});
 

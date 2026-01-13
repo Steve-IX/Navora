@@ -120,7 +120,7 @@ export const FriendsPanel: React.FC = () => {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center p-6">
-          <p className="text-gray-600 mb-4">Please sign in to use Friends features</p>
+          <p className="text-gray-600 dark:text-dark-text-secondary mb-4">Please sign in to use Friends features</p>
         </div>
       </div>
     );
@@ -136,10 +136,10 @@ export const FriendsPanel: React.FC = () => {
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search for users by email or name..."
-            className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-4 py-2 pl-10 border border-gray-300 dark:border-dark-border-default rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted"
           />
           <svg
-            className="absolute left-3 top-2.5 w-5 h-5 text-gray-400"
+            className="absolute left-3 top-2.5 w-5 h-5 text-gray-400 dark:text-dark-text-muted"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -155,7 +155,7 @@ export const FriendsPanel: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-4">
+      <div className="border-b border-gray-200 dark:border-dark-border-default mb-4">
         <div className="flex space-x-4">
           <button
             onClick={() => {
@@ -165,8 +165,8 @@ export const FriendsPanel: React.FC = () => {
             }}
             className={`px-4 py-2 font-medium text-sm transition-colors ${
               activeTab === 'friends'
-                ? 'text-primary-600 border-b-2 border-primary-600'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+                : 'text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary'
             }`}
           >
             Friends ({friends.length})
@@ -179,8 +179,8 @@ export const FriendsPanel: React.FC = () => {
             }}
             className={`px-4 py-2 font-medium text-sm transition-colors ${
               activeTab === 'received'
-                ? 'text-primary-600 border-b-2 border-primary-600'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+                : 'text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary'
             }`}
           >
             Received ({receivedRequests.length})
@@ -193,8 +193,8 @@ export const FriendsPanel: React.FC = () => {
             }}
             className={`px-4 py-2 font-medium text-sm transition-colors ${
               activeTab === 'sent'
-                ? 'text-primary-600 border-b-2 border-primary-600'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+                : 'text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary'
             }`}
           >
             Sent ({sentRequests.length})
@@ -203,14 +203,14 @@ export const FriendsPanel: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
           {error}
         </div>
       )}
 
       {isLoading && activeTab !== 'search' && (
         <div className="flex items-center justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
         </div>
       )}
 
@@ -220,10 +220,10 @@ export const FriendsPanel: React.FC = () => {
           <div className="space-y-2">
             {isSearching ? (
               <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
               </div>
             ) : searchResults.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-500 dark:text-dark-text-muted">
                 {searchQuery.trim().length >= 2
                   ? 'No users found'
                   : 'Type at least 2 characters to search'}
@@ -234,45 +234,45 @@ export const FriendsPanel: React.FC = () => {
                 return (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                    className="flex items-center justify-between p-4 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg hover:shadow-md dark:hover:shadow-dark-md transition-shadow"
                   >
                     <div className="flex items-center space-x-3">
                       {user.avatarUrl ? (
                         <img
                           src={user.avatarUrl}
                           alt={user.displayName || user.email}
-                          className="w-10 h-10 rounded-full object-cover"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-gray-200 dark:border-dark-border-default"
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                          <span className="text-primary-600 font-medium text-sm">
+                        <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+                          <span className="text-primary-600 dark:text-primary-400 font-medium text-sm">
                             {(user.displayName || user.email || 'U')[0].toUpperCase()}
                           </span>
                         </div>
                       )}
                       <div>
-                        <div className="font-medium text-gray-900">
+                        <div className="font-medium text-gray-900 dark:text-dark-text-primary">
                           {user.displayName || user.email}
                         </div>
                         {user.displayName && (
-                          <div className="text-sm text-gray-500">{user.email}</div>
+                          <div className="text-sm text-gray-500 dark:text-dark-text-secondary">{user.email}</div>
                         )}
                       </div>
                     </div>
                     <div>
                       {status === 'friend' ? (
-                        <span className="px-3 py-1 text-sm text-gray-600 bg-gray-100 rounded">
+                        <span className="px-3 py-1 text-sm text-gray-600 dark:text-dark-text-secondary bg-gray-100 dark:bg-dark-bg-tertiary rounded">
                           Friends
                         </span>
                       ) : status === 'pending' ? (
-                        <span className="px-3 py-1 text-sm text-yellow-600 bg-yellow-100 rounded">
+                        <span className="px-3 py-1 text-sm text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 rounded">
                           Pending
                         </span>
                       ) : (
                         <button
                           onClick={() => handleAddFriend(user.id)}
                           disabled={isLoading}
-                          className="px-4 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                          className="px-4 py-1.5 text-sm bg-primary-600 dark:bg-primary-500 text-white rounded hover:bg-primary-700 dark:hover:bg-primary-600 disabled:opacity-50 transition-colors"
                         >
                           Add Friend
                         </button>
@@ -289,9 +289,9 @@ export const FriendsPanel: React.FC = () => {
         {activeTab === 'friends' && (
           <div className="space-y-2">
             {friends.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-500 dark:text-dark-text-muted">
                 <svg
-                  className="w-16 h-16 mx-auto mb-4 text-gray-300"
+                  className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-dark-text-muted"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -303,31 +303,31 @@ export const FriendsPanel: React.FC = () => {
                     d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                   />
                 </svg>
-                <p className="text-lg font-medium mb-2">No friends yet</p>
+                <p className="text-lg font-medium mb-2 text-gray-900 dark:text-dark-text-primary">No friends yet</p>
                 <p className="text-sm">Search for users above to add friends</p>
               </div>
             ) : (
               friends.map((friend) => (
                 <div
                   key={friend.id}
-                  className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                  className="flex items-center justify-between p-4 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg hover:shadow-md dark:hover:shadow-dark-md transition-shadow"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                      <span className="text-primary-600 font-medium text-sm">
+                    <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+                      <span className="text-primary-600 dark:text-primary-400 font-medium text-sm">
                         {(friend.friend.email || 'U')[0].toUpperCase()}
                       </span>
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">{friend.friend.email}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="font-medium text-gray-900 dark:text-dark-text-primary">{friend.friend.email}</div>
+                      <div className="text-sm text-gray-500 dark:text-dark-text-secondary">
                         Friends since {new Date(friend.createdAt).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
                   <button
                     onClick={() => handleRemove(friend.id)}
-                    className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded transition-colors"
+                    className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                   >
                     Remove
                   </button>
@@ -341,25 +341,25 @@ export const FriendsPanel: React.FC = () => {
         {activeTab === 'received' && (
           <div className="space-y-2">
             {receivedRequests.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-lg font-medium mb-2">No pending requests</p>
+              <div className="text-center py-12 text-gray-500 dark:text-dark-text-muted">
+                <p className="text-lg font-medium mb-2 text-gray-900 dark:text-dark-text-primary">No pending requests</p>
                 <p className="text-sm">Friend requests you receive will appear here</p>
               </div>
             ) : (
               receivedRequests.map((request) => (
                 <div
                   key={request.id}
-                  className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                  className="flex items-center justify-between p-4 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg hover:shadow-md dark:hover:shadow-dark-md transition-shadow"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                      <span className="text-primary-600 font-medium text-sm">
+                    <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+                      <span className="text-primary-600 dark:text-primary-400 font-medium text-sm">
                         {(request.user.email || 'U')[0].toUpperCase()}
                       </span>
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">{request.user.email}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="font-medium text-gray-900 dark:text-dark-text-primary">{request.user.email}</div>
+                      <div className="text-sm text-gray-500 dark:text-dark-text-secondary">
                         {new Date(request.createdAt).toLocaleDateString()}
                       </div>
                     </div>
@@ -367,13 +367,13 @@ export const FriendsPanel: React.FC = () => {
                   <div className="flex space-x-2">
                     <button
                       onClick={() => handleAccept(request.id)}
-                      className="px-4 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors"
+                      className="px-4 py-1.5 text-sm bg-primary-600 dark:bg-primary-500 text-white rounded hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => handleDecline(request.id)}
-                      className="px-4 py-1.5 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                      className="px-4 py-1.5 text-sm bg-gray-200 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-300 dark:hover:bg-dark-bg-overlay transition-colors"
                     >
                       Decline
                     </button>
@@ -388,25 +388,25 @@ export const FriendsPanel: React.FC = () => {
         {activeTab === 'sent' && (
           <div className="space-y-2">
             {sentRequests.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-lg font-medium mb-2">No sent requests</p>
+              <div className="text-center py-12 text-gray-500 dark:text-dark-text-muted">
+                <p className="text-lg font-medium mb-2 text-gray-900 dark:text-dark-text-primary">No sent requests</p>
                 <p className="text-sm">Friend requests you send will appear here</p>
               </div>
             ) : (
               sentRequests.map((request) => (
                 <div
                   key={request.id}
-                  className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                  className="flex items-center justify-between p-4 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg hover:shadow-md dark:hover:shadow-dark-md transition-shadow"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                      <span className="text-primary-600 font-medium text-sm">
+                    <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+                      <span className="text-primary-600 dark:text-primary-400 font-medium text-sm">
                         {(request.user.email || 'U')[0].toUpperCase()}
                       </span>
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">{request.user.email}</div>
-                      <div className="text-sm text-yellow-600">Pending</div>
+                      <div className="font-medium text-gray-900 dark:text-dark-text-primary">{request.user.email}</div>
+                      <div className="text-sm text-yellow-600 dark:text-yellow-400">Pending</div>
                     </div>
                   </div>
                 </div>

@@ -6,6 +6,7 @@ import { useLocationStore } from '@/stores/locationStore';
 import { RoutingProfile } from '@shared/types/routing';
 import { geocodingService } from '@/services/api/geocoding.service';
 import { NavigationMode } from '@/components/navigation/NavigationMode';
+import { getTransportIcon as getTransportIconComponent } from '@/components/icons/TransportIcons';
 
 // Icon components
 const XIcon = () => (
@@ -45,12 +46,12 @@ const DirectionsIcon = () => (
   </svg>
 );
 
-const TRANSPORT_MODES: { value: RoutingProfile; icon: string; label: string; color: string }[] = [
-  { value: 'driving', icon: '🚗', label: 'Drive', color: 'bg-red-500' },
-  { value: 'walking', icon: '🚶', label: 'Walk', color: 'bg-orange-500' },
-  { value: 'cycling', icon: '🚴', label: 'Bike', color: 'bg-orange-500' },
-  { value: 'transit', icon: '🚌', label: 'Transit', color: 'bg-blue-500' },
-  { value: 'flight', icon: '✈️', label: 'Flight', color: 'bg-blue-500' },
+const TRANSPORT_MODES: { value: RoutingProfile; label: string; color: string }[] = [
+  { value: 'driving', label: 'Drive', color: 'bg-red-500' },
+  { value: 'walking', label: 'Walk', color: 'bg-orange-500' },
+  { value: 'cycling', label: 'Bike', color: 'bg-orange-500' },
+  { value: 'transit', label: 'Transit', color: 'bg-blue-500' },
+  { value: 'flight', label: 'Flight', color: 'bg-blue-500' },
 ];
 
 /**
@@ -295,16 +296,10 @@ export const RoutePlanner: React.FC = () => {
     return `${(meters / 1000).toFixed(1)} km`;
   };
 
-  // Get transport mode icon
+  // Get transport mode icon component
   const getTransportIcon = (mode?: string) => {
-    switch (mode) {
-      case 'flight': return '✈️';
-      case 'walking': return '🚶';
-      case 'cycling': return '🚴';
-      case 'transit': return '🚌';
-      case 'transfer': return '🔄';
-      default: return '🚗';
-    }
+    const IconComponent = getTransportIconComponent(mode);
+    return <IconComponent className="w-6 h-6" />;
   };
 
   // Get transport mode color
@@ -335,7 +330,7 @@ export const RoutePlanner: React.FC = () => {
       {/* Floating Action Button - Directions */}
       <button
         onClick={() => setIsExpanded(true)}
-        className={`fixed bottom-4 left-4 z-30 p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-all hover:shadow-xl active:scale-95 ${isExpanded ? 'hidden sm:block' : ''}`}
+        className={`fixed bottom-6 left-4 md:bottom-4 z-30 p-4 md:p-3.5 bg-white dark:bg-dark-bg-secondary rounded-full shadow-lg dark:shadow-dark-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-all hover:shadow-xl active:scale-95 min-w-[56px] min-h-[56px] md:min-w-0 md:min-h-0 flex items-center justify-center ${isExpanded ? 'hidden sm:block' : ''}`}
         aria-label="Open Directions"
         title="Directions"
       >
@@ -345,12 +340,12 @@ export const RoutePlanner: React.FC = () => {
       {/* Persistent Left Sidebar */}
       <div
         ref={sidebarRef}
-        className={`fixed left-0 top-0 h-full bg-white shadow-2xl z-40 transform transition-all duration-300 ease-in-out ${sidebarWidth} flex flex-col`}
+        className={`fixed left-0 top-0 h-full bg-white dark:bg-dark-bg-secondary shadow-2xl z-40 transform transition-all duration-300 ease-in-out ${sidebarWidth} flex flex-col`}
       >
         {/* Collapse/Expand Button - Hidden on mobile, visible on desktop */}
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className={`hidden sm:block absolute -right-12 top-4 p-2 bg-white rounded-r-lg shadow-lg hover:bg-gray-50 transition-colors z-50 ${isExpanded ? '' : 'rotate-180'}`}
+          className={`hidden sm:block absolute -right-12 top-4 p-2 bg-white dark:bg-dark-bg-secondary rounded-r-lg shadow-lg dark:shadow-dark-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors z-50 ${isExpanded ? '' : 'rotate-180'}`}
           aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
         >
           {isExpanded ? <ChevronLeftIcon /> : <ChevronRightIcon />}
@@ -359,14 +354,14 @@ export const RoutePlanner: React.FC = () => {
         {/* Sidebar Content */}
         <div className={`flex-1 overflow-hidden flex flex-col transition-opacity duration-300 ${contentOpacity}`}>
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-            <h2 className="text-xl font-semibold text-gray-900">Directions</h2>
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-dark-border-default flex-shrink-0">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">Directions</h2>
             <button
               onClick={() => {
                 setIsExpanded(false);
                 clearRoute();
               }}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-full transition-colors text-gray-700 dark:text-dark-text-secondary"
               aria-label="Close directions"
             >
               <XIcon />
@@ -377,7 +372,7 @@ export const RoutePlanner: React.FC = () => {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {/* Origin Input */}
             <div className="relative">
-              <div className="flex items-center gap-2 p-3 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all">
+              <div className="flex items-center gap-2 p-3 border border-gray-300 dark:border-dark-border-default rounded-lg focus-within:ring-2 focus-within:ring-blue-500 dark:focus-within:ring-primary-500 focus-within:border-blue-500 transition-all bg-white dark:bg-dark-bg-primary">
                 <div className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
                 <input
                   type="text"
@@ -386,7 +381,7 @@ export const RoutePlanner: React.FC = () => {
                   onFocus={() => setShowFromSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowFromSuggestions(false), 200)}
                   placeholder="Choose starting point"
-                  className="flex-1 outline-none text-sm"
+                  className="flex-1 outline-none text-sm bg-transparent text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted"
                 />
                 {currentLocation && (
                   <button
@@ -402,22 +397,22 @@ export const RoutePlanner: React.FC = () => {
                       setFromQuery('Current Location');
                       }
                     }}
-                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded transition-colors text-gray-600 dark:text-dark-text-secondary"
                     title="Use current location"
                   >
                     <NavigationIcon />
                   </button>
                 )}
               </div>
-              
+
               {/* From Suggestions */}
               {showFromSuggestions && fromSuggestions.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg shadow-xl dark:shadow-dark-md max-h-60 overflow-y-auto">
                   {fromSuggestions.map((suggestion, index) => (
                       <button
                       key={index}
                       onClick={() => handleFromSuggestionSelect(suggestion)}
-                      className="w-full text-left p-3 hover:bg-gray-50 flex items-start gap-3 transition-colors"
+                      className="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary flex items-start gap-3 transition-colors text-gray-900 dark:text-dark-text-primary"
                     >
                       <MapPinIcon />
                       <div className="flex-1 min-w-0">
@@ -431,7 +426,7 @@ export const RoutePlanner: React.FC = () => {
 
             {/* Destination Input */}
             <div className="relative">
-              <div className="flex items-center gap-2 p-3 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all">
+              <div className="flex items-center gap-2 p-3 border border-gray-300 dark:border-dark-border-default rounded-lg focus-within:ring-2 focus-within:ring-blue-500 dark:focus-within:ring-primary-500 focus-within:border-blue-500 transition-all bg-white dark:bg-dark-bg-primary">
                 <div className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
                 <input
                   type="text"
@@ -440,18 +435,18 @@ export const RoutePlanner: React.FC = () => {
                   onFocus={() => setShowToSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowToSuggestions(false), 200)}
                   placeholder="Choose destination"
-                  className="flex-1 outline-none text-sm"
+                  className="flex-1 outline-none text-sm bg-transparent text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted"
                 />
               </div>
-              
+
               {/* To Suggestions */}
               {showToSuggestions && toSuggestions.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg shadow-xl dark:shadow-dark-md max-h-60 overflow-y-auto">
                   {toSuggestions.map((suggestion, index) => (
                       <button
                       key={index}
                       onClick={() => handleToSuggestionSelect(suggestion)}
-                      className="w-full text-left p-3 hover:bg-gray-50 flex items-start gap-3 transition-colors"
+                      className="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary flex items-start gap-3 transition-colors text-gray-900 dark:text-dark-text-primary"
                     >
                       <MapPinIcon />
                       <div className="flex-1 min-w-0">
@@ -465,25 +460,30 @@ export const RoutePlanner: React.FC = () => {
 
             {/* Transport Mode Selection */}
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-2 px-2">
-              {TRANSPORT_MODES.map((mode) => (
-                <button
-                  key={mode.value}
-                  onClick={() => setProfile(mode.value)}
-                  className={`flex-1 min-w-[60px] p-3 rounded-lg border-2 transition-all ${
-                    selectedProfile === mode.value
-                      ? 'border-blue-500 bg-blue-50 shadow-sm'
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="text-2xl mb-1">{mode.icon}</div>
-                  <div className="text-xs font-medium">{mode.label}</div>
-                </button>
-              ))}
+              {TRANSPORT_MODES.map((mode) => {
+                const IconComponent = getTransportIconComponent(mode.value);
+                return (
+                  <button
+                    key={mode.value}
+                    onClick={() => setProfile(mode.value)}
+                    className={`flex-1 min-w-[60px] p-3 rounded-lg border-2 transition-all ${
+                      selectedProfile === mode.value
+                        ? 'border-blue-500 dark:border-primary-500 bg-blue-50 dark:bg-primary-900/30 shadow-sm'
+                        : 'border-gray-200 dark:border-dark-border-default hover:border-gray-300 dark:hover:border-dark-border-subtle hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary'
+                    }`}
+                  >
+                    <div className="mb-1 flex justify-center">
+                      <IconComponent className={`w-6 h-6 ${selectedProfile === mode.value ? 'text-blue-600 dark:text-primary-400' : 'text-gray-700 dark:text-dark-text-secondary'}`} />
+                    </div>
+                    <div className={`text-xs font-medium ${selectedProfile === mode.value ? 'text-blue-700 dark:text-primary-300' : 'text-gray-900 dark:text-dark-text-primary'}`}>{mode.label}</div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
                 {error}
               </div>
             )}
@@ -492,28 +492,28 @@ export const RoutePlanner: React.FC = () => {
             <button
               onClick={handleCalculateRoute}
               disabled={isLoading || waypoints.length < 2}
-              className="w-full py-3 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md active:scale-[0.98]"
+              className="w-full py-3 bg-blue-500 dark:bg-primary-600 text-white rounded-lg font-medium hover:bg-blue-600 dark:hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md active:scale-[0.98]"
             >
               {isLoading ? 'Calculating...' : 'Get Directions'}
             </button>
 
             {/* Route Results */}
             {selectedRoute && !error && (
-              <div className="space-y-4 pt-4 border-t border-gray-200">
+              <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-dark-border-default">
                 {/* Route Summary */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg">
                 <div className="flex items-center gap-3">
-                    <div className="text-3xl">
+                    <div className="flex items-center justify-center text-gray-700 dark:text-dark-text-secondary">
                       {getTransportIcon(selectedProfile)}
                     </div>
                   <div>
-                      <div className="font-semibold text-xl text-gray-900">{formatDuration(selectedRoute.duration)}</div>
-                      <div className="text-sm text-gray-600">{formatDistance(selectedRoute.distance)}</div>
+                      <div className="font-semibold text-xl text-gray-900 dark:text-dark-text-primary">{formatDuration(selectedRoute.duration)}</div>
+                      <div className="text-sm text-gray-600 dark:text-dark-text-secondary">{formatDistance(selectedRoute.distance)}</div>
                     </div>
                   </div>
                   <div className="flex gap-2">
                   <button
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors shadow-sm"
+                      className="px-4 py-2 bg-green-500 dark:bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-600 dark:hover:bg-green-700 transition-colors shadow-sm"
                       onClick={() => {
                         if (selectedRoute) {
                           startNavigation();
@@ -523,7 +523,7 @@ export const RoutePlanner: React.FC = () => {
                     Start
                   </button>
                   <button
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition-colors"
+                      className="px-4 py-2 bg-gray-200 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-dark-bg-overlay transition-colors"
                       onClick={() => setShowSteps(!showSteps)}
                   >
                       {showSteps ? 'Hide' : 'Steps'}
@@ -533,9 +533,9 @@ export const RoutePlanner: React.FC = () => {
 
                 {/* Flight Info */}
                 {selectedRoute.flightInfo && (
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                    <div className="font-medium mb-2 text-gray-900">Flight Details</div>
-                    <div className="text-sm space-y-1 text-gray-700">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <div className="font-medium mb-2 text-gray-900 dark:text-dark-text-primary">Flight Details</div>
+                    <div className="text-sm space-y-1 text-gray-700 dark:text-dark-text-secondary">
                       <div>
                         <span className="font-medium">Departure:</span> {selectedRoute.flightInfo.departureAirport} ({selectedRoute.flightInfo.departureIata})
                       </div>
@@ -549,28 +549,28 @@ export const RoutePlanner: React.FC = () => {
                 {/* Journey Breakdown */}
                 {selectedRoute.legs && selectedRoute.legs.length > 0 && (
                   <div className="space-y-2">
-                    <div className="font-medium text-gray-900 mb-2">Journey Breakdown</div>
+                    <div className="font-medium text-gray-900 dark:text-dark-text-primary mb-2">Journey Breakdown</div>
                     {selectedRoute.legs.map((leg, index) => (
-                      <div 
+                      <div
                         key={index}
-                        className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100 cursor-pointer"
+                        className="flex items-start gap-3 p-3 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors border border-gray-100 dark:border-dark-border-subtle cursor-pointer"
                         onClick={() => {
                           // Scroll to this leg on the map (if implemented)
                         }}
                       >
-                        <div className={`text-2xl mt-0.5 flex-shrink-0 ${getTransportColor(leg.transportMode)}`}>
+                        <div className={`mt-0.5 flex-shrink-0 flex items-center ${getTransportColor(leg.transportMode)}`}>
                           {getTransportIcon(leg.transportMode)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-gray-900">{leg.modeLabel || leg.transportMode}</div>
-                          <div className="text-sm text-gray-600 mt-1">
+                          <div className="font-medium text-sm text-gray-900 dark:text-dark-text-primary">{leg.modeLabel || leg.transportMode}</div>
+                          <div className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
                             {formatDuration(leg.duration)} · {formatDistance(leg.distance)}
                           </div>
                           {leg.steps && leg.steps.some(step => step.transferInfo) && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              {leg.steps.find(step => step.transferInfo)?.transferInfo?.airport && 
+                            <div className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
+                              {leg.steps.find(step => step.transferInfo)?.transferInfo?.airport &&
                                 `Transfer at ${leg.steps.find(step => step.transferInfo)?.transferInfo?.airport}`}
-                              {leg.steps.find(step => step.transferInfo)?.transferInfo?.layoverDuration && 
+                              {leg.steps.find(step => step.transferInfo)?.transferInfo?.layoverDuration &&
                                 ` · Layover: ${formatDuration(leg.steps.find(step => step.transferInfo)?.transferInfo?.layoverDuration || 0)}`}
                             </div>
                           )}
@@ -582,18 +582,18 @@ export const RoutePlanner: React.FC = () => {
 
                 {/* Detailed Steps (Expandable) */}
                 {showSteps && selectedRoute.legs && selectedRoute.legs.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-gray-200">
-                    <div className="font-medium text-gray-900 mb-2">Step-by-Step Directions</div>
+                  <div className="space-y-2 pt-2 border-t border-gray-200 dark:border-dark-border-default">
+                    <div className="font-medium text-gray-900 dark:text-dark-text-primary mb-2">Step-by-Step Directions</div>
                     {selectedRoute.legs.map((leg, legIndex) => (
                       <div key={legIndex} className="space-y-1">
                         {leg.steps && leg.steps.map((step, stepIndex) => (
                           <div key={stepIndex} className="flex items-start gap-3 p-2 text-sm">
-                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 text-xs font-medium mt-0.5">
+                            <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 text-xs font-medium mt-0.5">
                               {stepIndex + 1}
                             </div>
                             <div className="flex-1">
-                              <div className="text-gray-900">{step.instruction || 'Continue'}</div>
-                              <div className="text-gray-500 text-xs mt-0.5">
+                              <div className="text-gray-900 dark:text-dark-text-primary">{step.instruction || 'Continue'}</div>
+                              <div className="text-gray-500 dark:text-dark-text-muted text-xs mt-0.5">
                                 {formatDistance(step.distance)} · {formatDuration(step.duration)}
                               </div>
                             </div>

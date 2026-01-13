@@ -50,7 +50,7 @@ export const CheckInButton: React.FC<CheckInButtonProps> = ({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Add a note (optional)..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border-default rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted"
             rows={3}
           />
         </div>
@@ -64,7 +64,7 @@ export const CheckInButton: React.FC<CheckInButtonProps> = ({
           }
         }}
         disabled={isCheckingIn}
-        className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-2 bg-primary-600 dark:bg-primary-500 text-white rounded-lg hover:bg-primary-700 dark:hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isCheckingIn ? 'Checking in...' : showNoteInput ? 'Complete Check-in' : 'Check In'}
       </button>
@@ -74,7 +74,7 @@ export const CheckInButton: React.FC<CheckInButtonProps> = ({
             setShowNoteInput(false);
             setNote('');
           }}
-          className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+          className="w-full px-4 py-2 bg-gray-200 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-300 dark:hover:bg-dark-bg-overlay"
         >
           Cancel
         </button>

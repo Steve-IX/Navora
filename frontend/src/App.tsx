@@ -23,6 +23,7 @@ import { useLocationStore } from './stores/locationStore';
 import { Coordinates } from '@shared/types/geocoding';
 import { Place } from '@shared/types/places';
 import { getPlaceholderImage, getPlaceholderThumbnail } from './utils/placeholders';
+import { ToastContainer } from './components/ui/Toast';
 
 // Check if running in demo mode (frontend-only, no backend)
 const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.env.VITE_API_URL;
@@ -146,7 +147,6 @@ function App() {
           coordinates: result.coordinates,
           address: result.placeName,
           category,
-          categoryIcon: getCategoryIcon(category),
           ...generatePlaceEnhancements({
             id: result.id,
             name: result.placeName.split(',')[0],
@@ -165,7 +165,6 @@ function App() {
           name: 'Selected Location',
           coordinates,
           address: `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`,
-          categoryIcon: '📍',
         };
         setSelectedPlace(place);
         setSidePanelContent('places');
@@ -179,7 +178,6 @@ function App() {
         name: 'Selected Location',
         coordinates,
         address: `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`,
-        categoryIcon: '📍',
       };
       setSelectedPlace(place);
       setSidePanelContent('places');
@@ -198,7 +196,6 @@ function App() {
       name: poi.name,
       coordinates: poi.coordinates,
       category: poi.category,
-      categoryIcon: getCategoryIcon(poi.category),
       address: `${poi.coordinates.latitude.toFixed(6)}, ${poi.coordinates.longitude.toFixed(6)}`,
       ...generatePlaceEnhancements({
         id: `poi-${Date.now()}`,
@@ -237,13 +234,19 @@ function App() {
 
   return (
     <div className="w-full h-full relative">
+      {/* Skip to main content link for accessibility */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
       {/* Header */}
       <Header />
-      
+
       {/* Route Planner - Persistent Left Sidebar */}
       <RoutePlanner />
-      
-      <MapView onMapClick={handleMapClick} onPoiClick={handlePoiClick}>
+
+      <main id="main-content" className="w-full h-full">
+        <MapView onMapClick={handleMapClick} onPoiClick={handlePoiClick}>
         <LayerControl />
         <SearchBar />
         <GPSIndicator />
@@ -327,6 +330,7 @@ function App() {
           <MeasurementTool onClose={() => setShowMeasurementTool(false)} />
         )}
       </MapView>
+      </main>
 
       {/* Side Panel for Places */}
       <SidePanel
@@ -421,6 +425,9 @@ function App() {
           <SocialFeed />
         </div>
       </SidePanel>
+
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }
@@ -437,37 +444,6 @@ function inferCategoryFromContext(context?: Array<{ id: string; text: string }>)
     if (id.includes('address')) return 'place';
   }
   return 'place';
-}
-
-// Helper function to get category icon
-function getCategoryIcon(category?: string): string {
-  if (!category) return '📍';
-  
-  const iconMap: Record<string, string> = {
-    restaurant: '🍽️',
-    cafe: '☕',
-    bar: '🍺',
-    hotel: '🏨',
-    gas_station: '⛽',
-    parking: '🅿️',
-    hospital: '🏥',
-    pharmacy: '💊',
-    bank: '🏦',
-    supermarket: '🛒',
-    shopping: '🛍️',
-    attraction: '🎯',
-    museum: '🏛️',
-    park: '🌳',
-    gym: '💪',
-    cinema: '🎬',
-    school: '🏫',
-    airport: '✈️',
-    bus_station: '🚌',
-    train_station: '🚆',
-    place: '📍',
-  };
-  
-  return iconMap[category] || '📍';
 }
 
 // Generate place enhancements (rating, photos, etc.)
