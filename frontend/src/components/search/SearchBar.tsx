@@ -158,8 +158,8 @@ export const SearchBar: React.FC = () => {
               setShowResults(true);
             }
           }}
-          placeholder="Search for places..."
-          className="w-full px-4 py-3.5 md:py-3 pl-12 md:pl-11 pr-24 md:pr-20 rounded-lg shadow-elevation-2 dark:shadow-dark-md border border-gray-200 dark:border-dark-border-default bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-normal min-h-[48px] md:min-h-0 text-base md:text-sm"
+          placeholder="Search places, addresses, landmarks..."
+          className="w-full px-4 py-3.5 md:py-3 pl-12 md:pl-11 pr-24 md:pr-20 rounded-xl shadow-elevation-3 dark:shadow-dark-lg border-2 border-gray-300 dark:border-dark-border-default bg-white/95 dark:bg-dark-bg-secondary/95 backdrop-blur-sm text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 dark:focus:border-brand-400 transition-all duration-normal min-h-[48px] md:min-h-0 text-base md:text-sm hover:shadow-xl hover:border-gray-400 dark:hover:border-dark-border-default"
           aria-label="Search for places"
           aria-controls="search-results"
           aria-expanded={showResults}

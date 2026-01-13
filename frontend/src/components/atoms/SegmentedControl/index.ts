@@ -1,0 +1,2 @@
+export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from './SegmentedControl';
+export { default } from './SegmentedControl';

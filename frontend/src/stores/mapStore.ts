@@ -9,6 +9,8 @@ interface MapStore extends MapState {
   setPitch: (pitch: number) => void;
   setLayer: (layer: MapLayer) => void;
   setTrafficEnabled: (enabled: boolean) => void;
+  show3DBuildings: boolean;
+  setShow3DBuildings: (enabled: boolean) => void;
   markers: Marker[];
   routes: MapRoute[];
   addMarker: (marker: Marker) => void;
@@ -34,6 +36,7 @@ export const useMapStore = create<MapStore>((set) => ({
   pitch: 0,
   layer: 'standard',
   trafficEnabled: false,
+  show3DBuildings: true, // Enabled by default
   markers: [],
   routes: [],
 
@@ -43,6 +46,7 @@ export const useMapStore = create<MapStore>((set) => ({
   setPitch: (pitch) => set({ pitch }),
   setLayer: (layer) => set({ layer }),
   setTrafficEnabled: (enabled) => set({ trafficEnabled: enabled }),
+  setShow3DBuildings: (enabled) => set({ show3DBuildings: enabled }),
 
   addMarker: (marker) =>
     set((state) => ({

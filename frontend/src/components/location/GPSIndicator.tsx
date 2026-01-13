@@ -1,9 +1,44 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  MapPinIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  InformationCircleIcon,
+} from '@heroicons/react/24/outline';
 import { useLocationStore } from '@/stores/locationStore';
 import { useMapStore } from '@/stores/mapStore';
 import { locationService } from '@/services/locationService';
+import { Badge } from '@/components/atoms/Badge';
+import { Tooltip } from '@/components/atoms/Tooltip';
+import { IconButton } from '@/components/atoms/IconButton';
+
+// Human-friendly accuracy labels
+function getAccuracyInfo(meters: number | null): {
+  label: string;
+  variant: 'success' | 'warning' | 'error' | 'default';
+  description: string;
+} {
+  if (!meters) {
+    return { label: 'Unknown', variant: 'default', description: 'Location accuracy unavailable' };
+  }
+  if (meters < 10) {
+    return { label: 'Precise', variant: 'success', description: `Within ${Math.round(meters)}m` };
+  }
+  if (meters < 50) {
+    return { label: 'Good', variant: 'success', description: `Within ${Math.round(meters)}m` };
+  }
+  if (meters < 100) {
+    return { label: 'Moderate', variant: 'warning', description: `Within ${Math.round(meters)}m` };
+  }
+  if (meters < 500) {
+    return { label: 'Approximate', variant: 'warning', description: `Within ${Math.round(meters)}m` };
+  }
+  return { label: 'Low accuracy', variant: 'error', description: `Within ${Math.round(meters)}m` };
+}
 
 export const GPSIndicator: React.FC = () => {
+  const [showDetails, setShowDetails] = useState(false);
   const {
     currentLocation,
     accuracy,
@@ -20,6 +55,8 @@ export const GPSIndicator: React.FC = () => {
   } = useLocationStore();
 
   const { setCenter, setZoom } = useMapStore();
+
+  const accuracyInfo = getAccuracyInfo(accuracy);
 
   useEffect(() => {
     // Auto-start tracking on mount (like Google Maps)
@@ -43,7 +80,6 @@ export const GPSIndicator: React.FC = () => {
         })
         .catch(() => {
           // Permissions API might not be supported or query might fail
-          // This is okay, we'll handle it when user clicks the button
         });
     }
   }, [setPermissionGranted, isTracking]);
@@ -51,7 +87,6 @@ export const GPSIndicator: React.FC = () => {
   const handleStartTracking = async () => {
     try {
       setError(null);
-      // Request current position first (will use IP geolocation as fallback)
       const initialLocation = await locationService.getCurrentPosition();
       setCurrentLocation(initialLocation.coordinates);
       if (initialLocation.accuracy) setAccuracy(initialLocation.accuracy);
@@ -59,12 +94,9 @@ export const GPSIndicator: React.FC = () => {
       if (initialLocation.speed) setSpeed(initialLocation.speed);
       setPermissionGranted(true);
 
-      // Center map on location
       setCenter(initialLocation.coordinates);
-      setZoom(12); // Zoom in when we have a specific location
+      setZoom(12);
 
-      // Only start continuous tracking if browser geolocation is supported
-      // IP geolocation doesn't support watchPosition
       if (navigator.geolocation) {
         try {
           locationService.startTracking((location) => {
@@ -72,16 +104,13 @@ export const GPSIndicator: React.FC = () => {
             setAccuracy(location.accuracy ?? null);
             setHeading(location.heading ?? null);
             setSpeed(location.speed ?? null);
-            // MapView will automatically update the visual indicator
           });
           setIsTracking(true);
         } catch (trackError) {
-          // Tracking failed, but we still have the initial location
           console.warn('Failed to start continuous tracking:', trackError);
           setIsTracking(false);
         }
       } else {
-        // Browser geolocation not supported, just use the IP-based location
         setIsTracking(false);
       }
     } catch (err: any) {
@@ -96,7 +125,6 @@ export const GPSIndicator: React.FC = () => {
   const handleStopTracking = () => {
     locationService.stopTracking();
     setIsTracking(false);
-    // MapView will automatically remove the visual indicator when isTracking is false
   };
 
   const handleRecenter = () => {
@@ -108,90 +136,137 @@ export const GPSIndicator: React.FC = () => {
 
   return (
     <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
-      <div className="bg-white rounded-lg shadow-lg p-3 flex items-center gap-3">
-        <div className="flex flex-col items-center">
-          <div
-            className={`w-3 h-3 rounded-full ${
-              isTracking ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-            }`}
-            aria-label={isTracking ? 'Location tracking active' : 'Location tracking inactive'}
-          />
-          {error && (
-            <div className="text-xs text-red-600 mt-1 max-w-32 text-center">{error}</div>
-          )}
+      {/* Main indicator card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-elevation-2 dark:shadow-dark-md p-3 min-w-[200px]"
+      >
+        {/* Header with status */}
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2">
+            {/* Status dot */}
+            <span className="relative flex h-2.5 w-2.5">
+              {isTracking && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-400 opacity-75" />
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                  isTracking ? 'bg-success-500' : 'bg-gray-400 dark:bg-dark-text-muted'
+                }`}
+              />
+            </span>
+            <span className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
+              {isTracking ? 'Tracking' : 'Inactive'}
+            </span>
+          </div>
+
+          {/* Info toggle button */}
+          <Tooltip content={showDetails ? 'Hide details' : 'Show details'} position="left">
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              aria-label={showDetails ? 'Hide location details' : 'Show location details'}
+            >
+              <InformationCircleIcon className="w-4 h-4 text-gray-500 dark:text-dark-text-muted" />
+            </button>
+          </Tooltip>
         </div>
-        <div className="flex flex-col text-sm">
-          {currentLocation && (
-            <>
-              <div className="font-medium">
-                {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+
+        {/* Accuracy badge - human-friendly */}
+        {currentLocation && (
+          <div className="flex items-center gap-2">
+            <Badge variant={accuracyInfo.variant} dot pulse={isTracking} size="md">
+              {accuracyInfo.label} location
+            </Badge>
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div className="mt-2 text-xs text-error-600 dark:text-error-400 bg-error-50 dark:bg-error-900/20 px-2 py-1 rounded">
+            {error}
+          </div>
+        )}
+
+        {/* Expandable details */}
+        <AnimatePresence>
+          {showDetails && currentLocation && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="pt-2 mt-2 border-t border-gray-100 dark:border-dark-border-subtle space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500 dark:text-dark-text-muted">Latitude</span>
+                  <span className="font-mono text-gray-700 dark:text-dark-text-secondary">
+                    {currentLocation.latitude.toFixed(6)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500 dark:text-dark-text-muted">Longitude</span>
+                  <span className="font-mono text-gray-700 dark:text-dark-text-secondary">
+                    {currentLocation.longitude.toFixed(6)}
+                  </span>
+                </div>
+                {accuracy && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500 dark:text-dark-text-muted">Accuracy</span>
+                    <span className="font-mono text-gray-700 dark:text-dark-text-secondary">
+                      ±{Math.round(accuracy)}m
+                    </span>
+                  </div>
+                )}
+                {speed && speed > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500 dark:text-dark-text-muted">Speed</span>
+                    <span className="font-mono text-gray-700 dark:text-dark-text-secondary">
+                      {(speed * 3.6).toFixed(1)} km/h
+                    </span>
+                  </div>
+                )}
               </div>
-              {accuracy && (
-                <div className="text-gray-500">Accuracy: {Math.round(accuracy)}m</div>
-              )}
-              {speed && speed > 0 && (
-                <div className="text-gray-500">Speed: {(speed * 3.6).toFixed(1)} km/h</div>
-              )}
-            </>
+            </motion.div>
           )}
-        </div>
-      </div>
-      <div className="flex gap-2">
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Action buttons */}
+      <div className="flex justify-end gap-2">
         {!isTracking ? (
-          <button
+          <IconButton
+            icon={<MapPinIcon className="w-5 h-5" />}
             onClick={handleStartTracking}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-lg"
+            tooltip="Start tracking"
+            tooltipPosition="left"
+            variant="primary"
             aria-label="Start location tracking"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          </button>
+          />
         ) : (
           <>
-            <button
+            <IconButton
+              icon={<XMarkIcon className="w-5 h-5" />}
               onClick={handleStopTracking}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg"
+              tooltip="Stop tracking"
+              tooltipPosition="left"
+              variant="default"
+              className="!bg-error-50 !text-error-600 hover:!bg-error-100 dark:!bg-error-900/20 dark:!text-error-400"
               aria-label="Stop location tracking"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-            <button
+            />
+            <IconButton
+              icon={<ArrowPathIcon className="w-5 h-5" />}
               onClick={handleRecenter}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-lg"
+              tooltip="Recenter map"
+              tooltipPosition="left"
+              variant="primary"
               aria-label="Recenter map on location"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button>
+            />
           </>
         )}
       </div>
     </div>
   );
 };
-

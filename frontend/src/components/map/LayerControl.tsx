@@ -1,61 +1,100 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  MapIcon,
+  GlobeAltIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from '@heroicons/react/24/outline';
 import { useMapStore } from '@/stores/mapStore';
 import { MapLayer } from '@shared/types/map';
+import { SegmentedControl, SegmentOption } from '@/components/atoms/SegmentedControl';
+import { Toggle } from '@/components/atoms/Toggle';
 
-const layers: { value: MapLayer; label: string; icon: string }[] = [
-  { value: 'standard', label: 'Standard', icon: '🗺️' },
-  { value: 'satellite', label: 'Satellite', icon: '🛰️' },
-  { value: 'terrain', label: 'Terrain', icon: '⛰️' },
+// Mountain icon for terrain (custom SVG as Heroicons doesn't have one)
+const TerrainIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 20l4-8 3 4 5-10 4 14H4z" />
+  </svg>
+);
+
+const layerOptions: SegmentOption[] = [
+  { value: 'standard', label: 'Map', icon: <MapIcon className="w-4 h-4" /> },
+  { value: 'satellite', label: 'Satellite', icon: <GlobeAltIcon className="w-4 h-4" /> },
+  { value: 'terrain', label: 'Terrain', icon: <TerrainIcon className="w-4 h-4" /> },
 ];
 
 export const LayerControl: React.FC = () => {
-  const { layer, setLayer, trafficEnabled, setTrafficEnabled } = useMapStore();
-  const [show3D, setShow3D] = React.useState(true); // 3D buildings enabled by default
+  const { layer, setLayer, trafficEnabled, setTrafficEnabled, show3DBuildings, setShow3DBuildings } = useMapStore();
+  const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-2 z-10">
-      <div className="flex flex-col gap-2">
-        {layers.map((l) => (
-          <button
-            key={l.value}
-            onClick={() => setLayer(l.value)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              layer === l.value
-                ? 'bg-primary-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-            aria-label={`Switch to ${l.label} view`}
-          >
-            <span className="mr-2">{l.icon}</span>
-            {l.label}
-          </button>
-        ))}
-        <div className="border-t pt-2 mt-2 space-y-2">
-          <label className="flex items-center gap-2 px-4 py-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={trafficEnabled}
-              onChange={(e) => setTrafficEnabled(e.target.checked)}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      className="absolute top-4 left-4 z-10"
+    >
+      <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-elevation-2 dark:shadow-dark-md overflow-hidden">
+        {/* Header with expand/collapse */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+          aria-expanded={isExpanded}
+          aria-controls="layer-control-content"
+        >
+          <span className="flex items-center gap-2">
+            <MapIcon className="w-4 h-4 text-brand-500" />
+            Map Style
+          </span>
+          {isExpanded ? (
+            <ChevronUpIcon className="w-4 h-4 text-gray-400" />
+          ) : (
+            <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+          )}
+        </button>
+
+        {/* Collapsible content */}
+        <motion.div
+          id="layer-control-content"
+          initial={false}
+          animate={{ height: isExpanded ? 'auto' : 0, opacity: isExpanded ? 1 : 0 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+          className="overflow-hidden"
+        >
+          <div className="px-3 pb-3 space-y-4">
+            {/* Map style segmented control */}
+            <SegmentedControl
+              options={layerOptions}
+              value={layer}
+              onChange={(value) => setLayer(value as MapLayer)}
+              size="sm"
+              fullWidth
+              aria-label="Map style"
             />
-            <span className="text-sm text-gray-700">Traffic</span>
-          </label>
-          <label className="flex items-center gap-2 px-4 py-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={show3D}
-              onChange={(e) => {
-                setShow3D(e.target.checked);
-                // Note: 3D buildings toggle would need MapView integration
-                console.log('3D buildings:', e.target.checked);
-              }}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-            />
-            <span className="text-sm text-gray-700">3D Buildings</span>
-          </label>
-        </div>
+
+            {/* Overlay toggles */}
+            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-dark-border-subtle">
+              <div className="text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">
+                Overlays
+              </div>
+
+              <Toggle
+                checked={trafficEnabled}
+                onChange={setTrafficEnabled}
+                label="Traffic"
+                size="sm"
+              />
+
+              <Toggle
+                checked={show3DBuildings}
+                onChange={setShow3DBuildings}
+                label="3D Buildings"
+                size="sm"
+              />
+            </div>
+          </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };
-

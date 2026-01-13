@@ -1,4 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
+import {
+  UsersIcon,
+  UserIcon,
+  MapIcon,
+  NewspaperIcon,
+  MapPinIcon,
+} from '@heroicons/react/24/outline';
 import { MapView } from './components/map/MapView';
 import { LayerControl } from './components/map/LayerControl';
 import { SearchBar } from './components/search/SearchBar';
@@ -9,6 +16,8 @@ import { PlaceSearch, PlaceDetails, NearbyPlaces } from './components/places';
 import { MeasurementTool } from './components/tools';
 import { FriendsPanel, UserProfile, SocialFeed } from './components/social';
 import { GroupTripPlanner } from './components/trips';
+import { IconButton } from './components/atoms/IconButton';
+import { FABGroup, FABGroupSeparator } from './components/molecules/FABGroup';
 import { useMapStore } from './stores/mapStore';
 import { usePlacesStore } from './stores/placesStore';
 import { useUIStore } from './stores/uiStore';
@@ -24,6 +33,14 @@ import { Coordinates } from '@shared/types/geocoding';
 import { Place } from '@shared/types/places';
 import { getPlaceholderImage, getPlaceholderThumbnail } from './utils/placeholders';
 import { ToastContainer } from './components/ui/Toast';
+
+// Custom Ruler icon (Heroicons doesn't have one)
+const RulerIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h2m4 0h2m4 0h2m4 0h2M3 6v12a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M7 4v4M12 4v6M17 4v4" />
+  </svg>
+);
 
 // Check if running in demo mode (frontend-only, no backend)
 const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || !import.meta.env.VITE_API_URL;
@@ -251,79 +268,72 @@ function App() {
         <SearchBar />
         <GPSIndicator />
         
-        {/* Floating Action Buttons */}
-        <div className="absolute bottom-20 left-4 z-20 flex flex-col gap-2">
-          <button
-            onClick={() => {
-              setSelectedPlace(null);
-              setSidePanelContent('places');
-              setSidePanelOpen(true);
-            }}
-            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-            aria-label="Search places"
-          >
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => {
-              setSidePanelContent('friends');
-              setSidePanelOpen(true);
-            }}
-            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-            aria-label="Friends"
-          >
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => {
-              setSidePanelContent('profile');
-              setSidePanelOpen(true);
-            }}
-            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-            aria-label="Profile"
-          >
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => {
-              setSidePanelContent('trips');
-              setSidePanelOpen(true);
-            }}
-            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-            aria-label="Group Trips"
-          >
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => {
-              setSidePanelContent('feed');
-              setSidePanelOpen(true);
-            }}
-            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-            aria-label="Social Feed"
-          >
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setShowMeasurementTool(!showMeasurementTool)}
-            className="p-4 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-            aria-label="Measurement tool"
-          >
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-            </svg>
-          </button>
+        {/* Floating Action Buttons - Grouped by Intent */}
+        <div className="absolute bottom-20 left-4 z-20 flex flex-col gap-4">
+          {/* Social Group */}
+          <FABGroup label="Social" aria-label="Social actions">
+            <IconButton
+              icon={<UsersIcon className="w-5 h-5" />}
+              onClick={() => {
+                setSidePanelContent('friends');
+                setSidePanelOpen(true);
+              }}
+              tooltip="Friends"
+              aria-label="Open friends panel"
+            />
+            <IconButton
+              icon={<UserIcon className="w-5 h-5" />}
+              onClick={() => {
+                setSidePanelContent('profile');
+                setSidePanelOpen(true);
+              }}
+              tooltip="Profile"
+              aria-label="Open profile"
+            />
+            <IconButton
+              icon={<MapIcon className="w-5 h-5" />}
+              onClick={() => {
+                setSidePanelContent('trips');
+                setSidePanelOpen(true);
+              }}
+              tooltip="Group Trips"
+              aria-label="Open group trips"
+            />
+            <IconButton
+              icon={<NewspaperIcon className="w-5 h-5" />}
+              onClick={() => {
+                setSidePanelContent('feed');
+                setSidePanelOpen(true);
+              }}
+              tooltip="Social Feed"
+              aria-label="Open social feed"
+            />
+          </FABGroup>
+
+          {/* Visual Separator */}
+          <FABGroupSeparator />
+
+          {/* Location Actions Group */}
+          <FABGroup label="Location" aria-label="Location actions">
+            <IconButton
+              icon={<MapPinIcon className="w-5 h-5" />}
+              onClick={() => {
+                setSelectedPlace(null);
+                setSidePanelContent('places');
+                setSidePanelOpen(true);
+              }}
+              tooltip="Search places"
+              variant="primary"
+              aria-label="Search places"
+            />
+            <IconButton
+              icon={<RulerIcon className="w-5 h-5" />}
+              onClick={() => setShowMeasurementTool(!showMeasurementTool)}
+              tooltip="Measure distance"
+              active={showMeasurementTool}
+              aria-label="Toggle measurement tool"
+            />
+          </FABGroup>
         </div>
 
         {showMeasurementTool && (
