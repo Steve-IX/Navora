@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { XMarkIcon, EnvelopeIcon, LockClosedIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 
 interface LoginModalProps {
@@ -7,6 +9,22 @@ interface LoginModalProps {
   onSwitchToRegister: () => void;
   onSuccess?: () => void;
 }
+
+const backdropVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+};
+
+const modalVariants = {
+  hidden: { opacity: 0, scale: 0.95, y: 20 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: { type: 'spring', stiffness: 300, damping: 25 }
+  },
+  exit: { opacity: 0, scale: 0.95, y: 20 },
+};
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
@@ -17,9 +35,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const { login, isLoading, error } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle ESC key to close modal
+  // Handle ESC key to close modal and focus trap
   useEffect(() => {
     if (!isOpen) return;
 
@@ -29,11 +50,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
     };
 
+    // Focus the email input when modal opens
+    setTimeout(() => emailInputRef.current?.focus(), 100);
+
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,122 +80,194 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const displayError = localError || error;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <motion.div
+            variants={backdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
+            onClick={onClose}
+          />
 
-      {/* Modal */}
-      <div className="relative bg-white dark:bg-dark-bg-secondary rounded-lg shadow-xl dark:shadow-dark-md w-full max-w-md mx-4 z-10">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">Sign In</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:hover:text-dark-text-primary transition-colors"
-              aria-label="Close"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
+          {/* Modal */}
+          <motion.div
+            variants={modalVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="login-title"
+          >
+            {/* Header with gradient accent */}
+            <div className="relative px-6 pt-6 pb-4">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-400 via-brand-500 to-brand-600" />
 
-          {displayError && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
-              {displayError}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                Email
-              </label>
-              <input
-                id="login-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border-default rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted"
-                placeholder="your@email.com"
-                required
-                disabled={isLoading}
-              />
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 id="login-title" className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">
+                    Welcome back
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-dark-text-muted mt-1">
+                    Sign in to continue to Maps
+                  </p>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onClose}
+                  className="p-2 rounded-full text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+                  aria-label="Close modal"
+                >
+                  <XMarkIcon className="w-6 h-6" />
+                </motion.button>
+              </div>
             </div>
 
-            <div>
-              <label
-                htmlFor="login-password"
-                className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1"
-              >
-                Password
-              </label>
-              <input
-                id="login-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border-default rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary placeholder-gray-500 dark:placeholder-dark-text-muted"
-                placeholder="••••••••"
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full px-4 py-2 bg-primary-600 dark:bg-primary-500 text-white rounded-lg hover:bg-primary-700 dark:hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? (
-                <span className="flex items-center justify-center">
-                  <svg
-                    className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
+            <div className="px-6 pb-6">
+              {/* Error Message */}
+              <AnimatePresence>
+                {displayError && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400 flex items-center gap-2"
                   >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  Signing in...
-                </span>
-              ) : (
-                'Sign In'
-              )}
-            </button>
-          </form>
+                    <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    {displayError}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-          <div className="mt-4 text-center">
-            <button
-              onClick={onSwitchToRegister}
-              className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
-            >
-              Don't have an account? Sign up
-            </button>
-          </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Email Field */}
+                <div className="space-y-1.5">
+                  <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary">
+                    Email address
+                  </label>
+                  <div className={`relative rounded-xl border-2 transition-all duration-200 ${
+                    focusedField === 'email'
+                      ? 'border-brand-500 ring-4 ring-brand-500/10'
+                      : 'border-gray-200 dark:border-dark-border-default hover:border-gray-300 dark:hover:border-dark-border-subtle'
+                  }`}>
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-text-muted">
+                      <EnvelopeIcon className="w-5 h-5" />
+                    </div>
+                    <input
+                      ref={emailInputRef}
+                      id="login-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onFocus={() => setFocusedField('email')}
+                      onBlur={() => setFocusedField(null)}
+                      className="w-full pl-11 pr-4 py-3 bg-transparent text-gray-900 dark:text-dark-text-primary placeholder-gray-400 dark:placeholder-dark-text-muted focus:outline-none rounded-xl"
+                      placeholder="you@example.com"
+                      required
+                      disabled={isLoading}
+                      autoComplete="email"
+                    />
+                  </div>
+                </div>
+
+                {/* Password Field */}
+                <div className="space-y-1.5">
+                  <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary">
+                    Password
+                  </label>
+                  <div className={`relative rounded-xl border-2 transition-all duration-200 ${
+                    focusedField === 'password'
+                      ? 'border-brand-500 ring-4 ring-brand-500/10'
+                      : 'border-gray-200 dark:border-dark-border-default hover:border-gray-300 dark:hover:border-dark-border-subtle'
+                  }`}>
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-text-muted">
+                      <LockClosedIcon className="w-5 h-5" />
+                    </div>
+                    <input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onFocus={() => setFocusedField('password')}
+                      onBlur={() => setFocusedField(null)}
+                      className="w-full pl-11 pr-12 py-3 bg-transparent text-gray-900 dark:text-dark-text-primary placeholder-gray-400 dark:placeholder-dark-text-muted focus:outline-none rounded-xl"
+                      placeholder="••••••••"
+                      required
+                      disabled={isLoading}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary transition-colors"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Button */}
+                <motion.button
+                  type="submit"
+                  disabled={isLoading}
+                  whileHover={isLoading ? {} : { scale: 1.01 }}
+                  whileTap={isLoading ? {} : { scale: 0.99 }}
+                  className="w-full py-3.5 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl shadow-lg shadow-brand-500/25 hover:shadow-brand-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 min-h-[48px]"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      </motion.div>
+                      Signing in...
+                    </span>
+                  ) : (
+                    'Sign In'
+                  )}
+                </motion.button>
+              </form>
+
+              {/* Divider */}
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200 dark:border-dark-border-default" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="px-3 bg-white dark:bg-dark-bg-secondary text-sm text-gray-500 dark:text-dark-text-muted">
+                    New to Maps?
+                  </span>
+                </div>
+              </div>
+
+              {/* Switch to Register */}
+              <motion.button
+                type="button"
+                onClick={onSwitchToRegister}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                className="w-full py-3 border-2 border-gray-200 dark:border-dark-border-default text-gray-700 dark:text-dark-text-primary font-medium rounded-xl hover:border-brand-300 hover:bg-brand-50 dark:hover:border-brand-700 dark:hover:bg-brand-900/20 transition-all duration-200 min-h-[48px]"
+              >
+                Create an account
+              </motion.button>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 };
-

@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
 import { LoginModal, RegisterModal } from '@/components/auth';
 import { useProfileStore } from '@/stores/profileStore';
 import { useUIStore } from '@/stores/uiStore';
-import { SunIcon, MoonIcon } from '@heroicons/react/24/outline';
+import {
+  SunIcon,
+  MoonIcon,
+  ArrowRightOnRectangleIcon,
+  MapPinIcon,
+} from '@heroicons/react/24/outline';
 
 export const Header: React.FC = () => {
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -11,84 +17,164 @@ export const Header: React.FC = () => {
   const { darkMode, toggleDarkMode } = useUIStore();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleLogout = () => {
-    if (window.confirm('Are you sure you want to sign out?')) {
-      logout();
-    }
+    setShowLogoutConfirm(false);
+    logout();
   };
 
-  const displayName = profile?.displayName || user?.email || 'Guest';
+  const displayName = profile?.displayName || user?.email?.split('@')[0] || 'User';
   const avatarUrl = profile?.avatarUrl;
 
   return (
     <>
-      <header className="absolute top-0 left-0 right-0 z-30 bg-white/90 dark:bg-dark-bg-secondary/90 backdrop-blur-sm border-b border-gray-200 dark:border-dark-border-default">
-        <div className="flex items-center justify-between px-4 py-3 md:py-2">
-          <div className="flex items-center space-x-2">
-            <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-dark-text-primary">Maps</h1>
-          </div>
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-dark-bg-secondary/95 backdrop-blur-md border-b border-gray-200 dark:border-dark-border-default shadow-sm">
+        <div className="flex items-center justify-between px-4 h-[52px] md:h-[44px]">
+          {/* Logo & Brand */}
+          <motion.div
+            className="flex items-center gap-2"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-md shadow-brand-500/20">
+              <MapPinIcon className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-lg font-bold bg-gradient-to-r from-brand-500 to-brand-600 bg-clip-text text-transparent">
+              Maps
+            </h1>
+          </motion.div>
 
-          <div className="flex items-center space-x-2 md:space-x-4">
-            {/* Theme Toggle Button - 44x44px touch target */}
-            <button
+          {/* Right Section */}
+          <div className="flex items-center gap-2">
+            {/* Theme Toggle */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={toggleDarkMode}
-              className="p-3 md:p-2.5 text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              {darkMode ? (
-                <SunIcon className="w-5 h-5 md:w-6 md:h-6" />
-              ) : (
-                <MoonIcon className="w-5 h-5 md:w-6 md:h-6" />
-              )}
-            </button>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={darkMode ? 'dark' : 'light'}
+                  initial={{ rotate: -90, opacity: 0 }}
+                  animate={{ rotate: 0, opacity: 1 }}
+                  exit={{ rotate: 90, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {darkMode ? (
+                    <SunIcon className="w-5 h-5" />
+                  ) : (
+                    <MoonIcon className="w-5 h-5" />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </motion.button>
 
             {isAuthenticated ? (
-              <>
-                <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
+                {/* User Avatar & Name */}
+                <div className="flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors cursor-default">
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
                       alt={displayName}
-                      className="w-10 h-10 md:w-8 md:h-8 rounded-full object-cover border-2 border-gray-200 dark:border-dark-border-default"
+                      className="w-8 h-8 rounded-full object-cover ring-2 ring-brand-200 dark:ring-brand-800"
                     />
                   ) : (
-                    <div className="w-10 h-10 md:w-8 md:h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
-                      <span className="text-primary-600 dark:text-primary-400 font-medium text-sm md:text-xs">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center ring-2 ring-brand-200 dark:ring-brand-800">
+                      <span className="text-white font-semibold text-sm">
                         {displayName[0].toUpperCase()}
                       </span>
                     </div>
                   )}
-                  <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary hidden sm:inline">
+                  <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary hidden sm:inline max-w-[100px] truncate">
                     {displayName}
                   </span>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="px-4 py-2.5 md:px-3 md:py-2 text-sm text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors min-h-[44px] md:min-h-0"
+
+                {/* Sign Out Button */}
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowLogoutConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 dark:text-dark-text-secondary hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                  aria-label="Sign out"
                 >
-                  Sign Out
-                </button>
-              </>
+                  <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </motion.button>
+              </div>
             ) : (
-              <div className="flex items-center space-x-2">
-                <button
+              <div className="flex items-center gap-2">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => setShowLoginModal(true)}
-                  className="px-4 py-2.5 md:px-3 md:py-2 text-sm text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors min-h-[44px] md:min-h-0"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-xl transition-colors"
                 >
                   Sign In
-                </button>
-                <button
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => setShowRegisterModal(true)}
-                  className="px-4 py-2.5 md:px-3 md:py-2 text-sm bg-primary-600 dark:bg-primary-500 text-white rounded-lg hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors min-h-[44px] md:min-h-0"
+                  className="px-4 py-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white rounded-xl shadow-md shadow-brand-500/25 hover:shadow-brand-600/30 transition-all"
                 >
                   Sign Up
-                </button>
+                </motion.button>
               </div>
             )}
           </div>
         </div>
       </header>
+
+      {/* Logout Confirmation Dialog */}
+      <AnimatePresence>
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setShowLogoutConfirm(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-2xl p-6 max-w-sm w-full"
+            >
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-2">
+                Sign out?
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-dark-text-muted mb-6">
+                Are you sure you want to sign out of your account?
+              </p>
+              <div className="flex gap-3">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-gray-100 dark:bg-dark-bg-tertiary hover:bg-gray-200 dark:hover:bg-dark-bg-overlay rounded-xl transition-colors"
+                >
+                  Cancel
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleLogout}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-xl shadow-md shadow-red-500/25 transition-all"
+                >
+                  Sign Out
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {showLoginModal && (
         <LoginModal
@@ -116,4 +202,3 @@ export const Header: React.FC = () => {
     </>
   );
 };
-

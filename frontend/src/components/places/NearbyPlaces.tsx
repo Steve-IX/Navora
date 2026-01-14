@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MapPinIcon, BuildingStorefrontIcon } from '@heroicons/react/24/outline';
 import { usePlacesStore } from '@/stores/placesStore';
 import { placesService } from '@/services/api/places.service';
 import { useMapStore } from '@/stores/mapStore';
@@ -8,24 +10,28 @@ interface NearbyPlacesProps {
   category?: string;
 }
 
-// Calculate distance between two coordinates in meters
-function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371e3; // Earth's radius in meters
+const listVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05 }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0 }
+};
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
   return R * c;
 }
 
@@ -43,14 +49,12 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
   } = usePlacesStore();
 
   const { setCenter: setMapCenter, addMarker, removeMarker } = useMapStore();
-  
-  // Track last fetched location, category, and debounce timer
+
   const lastFetchedLocation = useRef<{ lat: number; lng: number } | null>(null);
   const lastFetchedCategory = useRef<string | null>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-  const MIN_DISTANCE_THRESHOLD = 100; // Only refetch if moved at least 100 meters
+  const MIN_DISTANCE_THRESHOLD = 100;
 
-  // Update selectedCategory when category prop changes
   useEffect(() => {
     if (category !== selectedCategory) {
       setSelectedCategory(category || null);
@@ -58,11 +62,8 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
   }, [category]);
 
   useEffect(() => {
-    if (center.latitude === 0 && center.longitude === 0) {
-      return;
-    }
+    if (center.latitude === 0 && center.longitude === 0) return;
 
-    // Check if we need to refetch based on distance moved or category changed
     const distanceMoved = lastFetchedLocation.current
       ? calculateDistance(
           lastFetchedLocation.current.lat,
@@ -71,50 +72,35 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
           center.longitude
         )
       : Infinity;
-    
+
     const categoryChanged = lastFetchedCategory.current !== selectedCategory;
-    const shouldRefetch = !lastFetchedLocation.current || 
+    const shouldRefetch = !lastFetchedLocation.current ||
       distanceMoved > MIN_DISTANCE_THRESHOLD ||
       categoryChanged;
 
     if (shouldRefetch) {
-      // Clear existing debounce timer
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-      }
-
-      // Debounce the API call by 500ms
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(() => {
         loadNearbyPlaces();
-        lastFetchedLocation.current = {
-          lat: center.latitude,
-          lng: center.longitude,
-        };
+        lastFetchedLocation.current = { lat: center.latitude, lng: center.longitude };
         lastFetchedCategory.current = selectedCategory;
       }, 500);
     }
 
-    // Cleanup on unmount
     return () => {
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-      }
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
   }, [center, selectedCategory]);
 
   const loadNearbyPlaces = async () => {
     setIsLoading(true);
     setError(null);
-
     try {
-      // Cap limit at 10 if category is selected (backend category endpoint max is 10)
-      // Otherwise allow up to 20 for non-category searches
       const limit = selectedCategory ? 10 : 20;
-      
       const places = await placesService.getNearbyPlaces({
         coordinates: center,
         category: selectedCategory || undefined,
-        radius: 2000, // 2km radius
+        radius: 2000,
         limit,
       });
       setNearbyPlaces(places);
@@ -128,11 +114,7 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
   const handlePlaceSelect = (place: Place) => {
     setSelectedPlace(place);
     setMapCenter(place.coordinates);
-    
-    // Remove previous place markers
     removeMarker(`nearby-place-${place.id}`);
-    
-    // Add marker for selected place
     addMarker({
       id: `nearby-place-${place.id}`,
       coordinates: place.coordinates,
@@ -143,92 +125,136 @@ export const NearbyPlaces: React.FC<NearbyPlacesProps> = ({ category }) => {
 
   const handleCategoryChange = (categoryId: string | null) => {
     setSelectedCategory(categoryId);
-    // Reset last fetched category to force immediate refetch
     lastFetchedCategory.current = null;
-    // Also reset location to ensure refetch happens
     lastFetchedLocation.current = null;
   };
 
   return (
     <div className="w-full">
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-3">Nearby Places</h3>
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center">
+          <BuildingStorefrontIcon className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-dark-text-primary">Nearby Places</h3>
+          <p className="text-xs text-gray-500 dark:text-dark-text-muted">
+            {nearbyPlaces.length} {nearbyPlaces.length === 1 ? 'place' : 'places'} found
+          </p>
+        </div>
+      </div>
 
-        {/* Category Filter */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          <button
-            onClick={() => handleCategoryChange(null)}
-            className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              selectedCategory === null
-                ? 'bg-primary-600 dark:bg-primary-500 text-white'
+      {/* Category Pills */}
+      <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-hide">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => handleCategoryChange(null)}
+          className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+            selectedCategory === null
+              ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
+              : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200 dark:hover:bg-dark-bg-overlay'
+          }`}
+        >
+          All
+        </motion.button>
+        {PLACE_CATEGORIES.slice(0, 10).map((cat) => (
+          <motion.button
+            key={cat.id}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleCategoryChange(cat.id)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              selectedCategory === cat.id
+                ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
                 : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200 dark:hover:bg-dark-bg-overlay'
             }`}
           >
-            All
-          </button>
-          {PLACE_CATEGORIES.slice(0, 10).map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => handleCategoryChange(cat.id)}
-              className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === cat.id
-                  ? 'bg-primary-600 dark:bg-primary-500 text-white'
-                  : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200 dark:hover:bg-dark-bg-overlay'
-              }`}
-            >
-              <span className="mr-1">{cat.icon}</span>
-              {cat.name}
-            </button>
-          ))}
-        </div>
+            <span>{cat.icon}</span>
+            {cat.name}
+          </motion.button>
+        ))}
       </div>
 
       {/* Loading */}
       {isLoading && (
         <div className="flex justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full"
+          />
         </div>
       )}
 
       {/* Error */}
-      {error && (
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
-          {error}
-        </div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400"
+          >
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Results */}
       {!isLoading && !error && nearbyPlaces.length > 0 && (
-        <div className="space-y-2 max-h-96 overflow-y-auto">
+        <motion.div
+          variants={listVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-2 max-h-96 overflow-y-auto"
+        >
           {nearbyPlaces.map((place) => (
-            <button
+            <motion.button
               key={place.id}
+              variants={itemVariants}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
               onClick={() => handlePlaceSelect(place)}
-              className="w-full text-left p-3 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary hover:border-primary-300 dark:hover:border-primary-500 transition-colors"
+              className="w-full text-left p-4 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border-default rounded-xl hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-md transition-all"
             >
               <div className="flex items-start gap-3">
-                <div className="text-2xl flex-shrink-0">{place.categoryIcon || '📍'}</div>
+                <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-dark-bg-tertiary flex items-center justify-center text-2xl flex-shrink-0">
+                  {place.categoryIcon || '📍'}
+                </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900 dark:text-dark-text-primary truncate">{place.name}</div>
+                  <p className="font-semibold text-gray-900 dark:text-dark-text-primary truncate">
+                    {place.name}
+                  </p>
                   {place.address && (
-                    <div className="text-sm text-gray-500 dark:text-dark-text-secondary truncate mt-1">{place.address}</div>
+                    <p className="text-sm text-gray-500 dark:text-dark-text-secondary truncate mt-0.5">
+                      {place.address}
+                    </p>
                   )}
                   {place.category && (
-                    <div className="text-xs text-gray-400 dark:text-dark-text-muted mt-1">
+                    <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 bg-gray-100 dark:bg-dark-bg-tertiary rounded-md text-xs text-gray-600 dark:text-dark-text-muted">
                       {PLACE_CATEGORIES.find((c) => c.id === place.category)?.name}
-                    </div>
+                    </span>
                   )}
                 </div>
               </div>
-            </button>
+            </motion.button>
           ))}
-        </div>
+        </motion.div>
       )}
 
+      {/* Empty State */}
       {!isLoading && !error && nearbyPlaces.length === 0 && (
-        <div className="text-center py-8 text-gray-500 dark:text-dark-text-muted">No nearby places found</div>
+        <div className="text-center py-12">
+          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-dark-bg-tertiary flex items-center justify-center mx-auto mb-4">
+            <MapPinIcon className="w-8 h-8 text-gray-400 dark:text-dark-text-muted" />
+          </div>
+          <p className="font-medium text-gray-900 dark:text-dark-text-primary mb-1">No places found</p>
+          <p className="text-sm text-gray-500 dark:text-dark-text-muted">
+            Try a different category or move the map
+          </p>
+        </div>
       )}
     </div>
   );
 };
-

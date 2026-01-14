@@ -1,16 +1,17 @@
 {
-  "includeCoAuthoredBy": false,
   "attribution": {
     "commit": "",
     "pr": ""
   },
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "Bash(npm install)",
       "Bash(npm run build:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run lint:*)"
     ]
   }
 }

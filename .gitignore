@@ -45,4 +45,5 @@ frontend/.env
 # Misc
 .cache/
 .temp/
+tmpclaude-*
 

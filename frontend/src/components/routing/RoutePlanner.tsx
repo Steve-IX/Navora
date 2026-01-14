@@ -15,18 +15,6 @@ const XIcon = () => (
   </svg>
 );
 
-const ChevronLeftIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-  </svg>
-);
-
-const ChevronRightIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-  </svg>
-);
-
 const MapPinIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -59,7 +47,7 @@ const TRANSPORT_MODES: { value: RoutingProfile; label: string; color: string }[]
  * Left-hand sidebar that remains visible while interacting with the map
  */
 export const RoutePlanner: React.FC = () => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [fromQuery, setFromQuery] = useState('');
   const [toQuery, setToQuery] = useState('');
   const [fromSuggestions, setFromSuggestions] = useState<any[]>([]);
@@ -337,20 +325,11 @@ export const RoutePlanner: React.FC = () => {
         <DirectionsIcon />
       </button>
 
-      {/* Persistent Left Sidebar */}
+      {/* Persistent Left Sidebar - Positioned below header */}
       <div
         ref={sidebarRef}
-        className={`fixed left-0 top-0 h-full bg-white dark:bg-dark-bg-secondary shadow-2xl z-40 transform transition-all duration-300 ease-in-out ${sidebarWidth} flex flex-col`}
+        className={`fixed left-0 top-[52px] md:top-[44px] h-[calc(100%-52px)] md:h-[calc(100%-44px)] bg-white dark:bg-dark-bg-secondary shadow-2xl z-40 transform transition-all duration-300 ease-in-out ${sidebarWidth} flex flex-col`}
       >
-        {/* Collapse/Expand Button - Hidden on mobile, visible on desktop */}
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className={`hidden sm:block absolute -right-12 top-4 p-2 bg-white dark:bg-dark-bg-secondary rounded-r-lg shadow-lg dark:shadow-dark-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors z-50 ${isExpanded ? '' : 'rotate-180'}`}
-          aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
-        >
-          {isExpanded ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-        </button>
-
         {/* Sidebar Content */}
         <div className={`flex-1 overflow-hidden flex flex-col transition-opacity duration-300 ${contentOpacity}`}>
           {/* Header */}
