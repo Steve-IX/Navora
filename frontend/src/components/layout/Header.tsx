@@ -32,8 +32,8 @@ export const Header: React.FC = () => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-dark-bg-secondary/95 backdrop-blur-md border-b border-gray-200 dark:border-dark-border-default shadow-sm">
-        <div className="flex items-center justify-between px-4 h-[52px] md:h-[44px]">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md border-b border-white/40 dark:border-white/10 shadow-sm">
+        <div className="flex items-center justify-between px-4 h-[48px] md:h-[40px]">
           {/* Logo & Brand */}
           <motion.div
             className="flex items-center gap-2"
@@ -58,7 +58,7 @@ export const Header: React.FC = () => {
                 setSidePanelContent('weather');
                 setSidePanelOpen(true);
               }}
-              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-colors"
               aria-label="Open weather panel"
             >
               <CloudIcon className="w-5 h-5" />
@@ -70,7 +70,7 @@ export const Header: React.FC = () => {
                 setSidePanelContent('flights');
                 setSidePanelOpen(true);
               }}
-              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-colors"
               aria-label="Open flights panel"
             >
               <PaperAirplaneIcon className="w-5 h-5 -rotate-45" />
@@ -81,7 +81,7 @@ export const Header: React.FC = () => {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={toggleDarkMode}
-              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-colors"
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               <AnimatePresence mode="wait" initial={false}>
@@ -104,7 +104,7 @@ export const Header: React.FC = () => {
             {isAuthenticated ? (
               <div className="flex items-center gap-2">
                 {/* User Avatar & Name */}
-                <div className="flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors cursor-default">
+                <div className="flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-colors cursor-default">
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
@@ -128,7 +128,7 @@ export const Header: React.FC = () => {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setShowLogoutConfirm(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 dark:text-dark-text-secondary hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 dark:text-dark-text-secondary hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50/70 dark:hover:bg-red-900/20 rounded-xl transition-colors"
                   aria-label="Sign out"
                 >
                   <ArrowRightOnRectangleIcon className="w-4 h-4" />
@@ -141,7 +141,7 @@ export const Header: React.FC = () => {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setShowLoginModal(true)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-xl transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 rounded-xl transition-colors"
                 >
                   Sign In
                 </motion.button>

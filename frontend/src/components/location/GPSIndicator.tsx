@@ -140,7 +140,7 @@ export const GPSIndicator: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-elevation-2 dark:shadow-dark-md p-3 min-w-[200px]"
+        className="bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md rounded-xl shadow-elevation-2 dark:shadow-dark-md border border-white/40 dark:border-white/10 p-3 min-w-[200px]"
       >
         {/* Header with status */}
         <div className="flex items-center justify-between gap-3 mb-2">
@@ -165,7 +165,7 @@ export const GPSIndicator: React.FC = () => {
           <Tooltip content={showDetails ? 'Hide details' : 'Show details'} position="left">
             <button
               onClick={() => setShowDetails(!showDetails)}
-              className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              className="p-1 rounded-full hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-colors"
               aria-label={showDetails ? 'Hide location details' : 'Show location details'}
             >
               <InformationCircleIcon className="w-4 h-4 text-gray-500 dark:text-dark-text-muted" />
@@ -184,7 +184,7 @@ export const GPSIndicator: React.FC = () => {
 
         {/* Error message */}
         {error && (
-          <div className="mt-2 text-xs text-error-600 dark:text-error-400 bg-error-50 dark:bg-error-900/20 px-2 py-1 rounded">
+          <div className="mt-2 text-xs text-error-600 dark:text-error-400 bg-error-50/80 dark:bg-error-900/20 px-2 py-1 rounded">
             {error}
           </div>
         )}
@@ -199,7 +199,7 @@ export const GPSIndicator: React.FC = () => {
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="pt-2 mt-2 border-t border-gray-100 dark:border-dark-border-subtle space-y-1">
+              <div className="pt-2 mt-2 border-t border-white/40 dark:border-white/10 space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-500 dark:text-dark-text-muted">Latitude</span>
                   <span className="font-mono text-gray-700 dark:text-dark-text-secondary">

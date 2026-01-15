@@ -22,7 +22,7 @@ interface DetailItemProps {
 
 const DetailItem: React.FC<DetailItemProps> = ({ icon, label, value }) => (
   <motion.div
-    className="bg-slate-50 dark:bg-dark-bg-tertiary rounded-lg p-3"
+    className="bg-white/70 dark:bg-dark-bg-tertiary/70 backdrop-blur-md rounded-lg p-3 border border-white/40 dark:border-white/10"
     whileHover={{ y: -2 }}
     transition={{ type: 'spring', stiffness: 300, damping: 24 }}
   >
@@ -211,7 +211,7 @@ export const WeatherPanel: React.FC = () => {
       className="h-full bg-white dark:bg-dark-bg-secondary flex flex-col"
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center justify-between p-6 border-b border-white/40 dark:border-white/10">
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">Weather</h2>
         <div className="flex items-center gap-2">
           <button
@@ -243,7 +243,7 @@ export const WeatherPanel: React.FC = () => {
         </div>
 
         {/* Main weather display */}
-        <div className="bg-gradient-to-br from-sky-50 to-cyan-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-6">
+        <div className="bg-white/70 dark:bg-dark-bg-tertiary/70 backdrop-blur-md rounded-xl p-6 border border-white/40 dark:border-white/10">
           <div className="flex items-center gap-6">
             <WeatherIcon
               condition={currentWeather.condition}
@@ -287,7 +287,7 @@ export const WeatherPanel: React.FC = () => {
           <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Cloud Cover
           </h3>
-          <div className="bg-slate-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
+          <div className="bg-white/70 dark:bg-dark-bg-tertiary/70 backdrop-blur-md rounded-lg p-3 border border-white/40 dark:border-white/10">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-600 dark:text-slate-400">Coverage</span>
               <span className="text-sm font-semibold text-slate-900 dark:text-white">

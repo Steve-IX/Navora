@@ -318,7 +318,7 @@ export const RoutePlanner: React.FC = () => {
       {/* Floating Action Button - Directions */}
       <button
         onClick={() => setIsExpanded(true)}
-        className={`fixed bottom-6 left-4 md:bottom-4 z-30 p-4 md:p-3.5 bg-white dark:bg-dark-bg-secondary rounded-full shadow-lg dark:shadow-dark-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-all hover:shadow-xl active:scale-95 min-w-[56px] min-h-[56px] md:min-w-0 md:min-h-0 flex items-center justify-center ${isExpanded ? 'hidden sm:block' : ''}`}
+        className={`fixed bottom-6 left-4 md:bottom-4 z-30 p-4 md:p-3.5 bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md rounded-full shadow-lg dark:shadow-dark-md border border-white/40 dark:border-white/10 hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-all hover:shadow-xl active:scale-95 min-w-[56px] min-h-[56px] md:min-w-0 md:min-h-0 flex items-center justify-center ${isExpanded ? 'hidden sm:block' : ''}`}
         aria-label="Open Directions"
         title="Directions"
       >
@@ -328,7 +328,7 @@ export const RoutePlanner: React.FC = () => {
       {/* Persistent Left Sidebar - Positioned below header */}
       <div
         ref={sidebarRef}
-        className={`fixed left-0 top-[52px] md:top-[44px] h-[calc(100%-52px)] md:h-[calc(100%-44px)] bg-white dark:bg-dark-bg-secondary shadow-2xl z-40 transform transition-all duration-300 ease-in-out ${sidebarWidth} flex flex-col`}
+        className={`fixed left-0 top-[52px] md:top-[44px] h-[calc(100%-52px)] md:h-[calc(100%-44px)] bg-white/80 dark:bg-dark-bg-secondary/70 backdrop-blur-lg shadow-2xl z-40 transform transition-all duration-300 ease-in-out ${sidebarWidth} flex flex-col border-r border-white/40 dark:border-white/10`}
       >
         {/* Sidebar Content */}
         <div className={`flex-1 overflow-hidden flex flex-col transition-opacity duration-300 ${contentOpacity}`}>

@@ -53,9 +53,9 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({
     return (
       <div
         className={`
-          bg-white dark:bg-dark-bg-secondary
+          bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md
           rounded-xl shadow-lg p-3
-          border border-red-200 dark:border-red-800
+          border border-red-200/60 dark:border-red-800/60
           ${className}
         `}
       >
@@ -75,8 +75,9 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({
     return (
       <div
         className={`
-          bg-white dark:bg-dark-bg-secondary
+          bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md
           rounded-xl shadow-lg p-4
+          border border-white/40 dark:border-white/10
           ${className}
         `}
       >
@@ -98,8 +99,8 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({
       whileHover={{ scale: 1.02, y: -2 }}
       transition={{ type: 'spring', stiffness: 250, damping: 20 }}
       className={`
-        bg-white dark:bg-dark-bg-secondary
-        rounded-xl shadow-lg
+        bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md
+        rounded-xl shadow-lg border border-white/40 dark:border-white/10
         overflow-hidden cursor-pointer
         hover:shadow-xl transition-shadow
         ${className}
@@ -147,7 +148,7 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({
         </div>
 
         {/* Location info */}
-        <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+        <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-white/40 dark:border-white/10">
           <MapPinIcon className="w-3.5 h-3.5 text-slate-400" />
           <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
             {currentWeather.location.name}, {currentWeather.location.country}
