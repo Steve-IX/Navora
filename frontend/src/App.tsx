@@ -1,10 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   UsersIcon,
   UserIcon,
   MapIcon,
   NewspaperIcon,
-  MapPinIcon,
+  CloudIcon,
+  PaperAirplaneIcon,
+  Squares2X2Icon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { MapView } from './components/map/MapView';
 import { LayerControl } from './components/map/LayerControl';
@@ -13,13 +17,12 @@ import { RoutePlanner } from './components/routing/RoutePlanner';
 import { GPSIndicator } from './components/location/GPSIndicator';
 import { SidePanel, Header } from './components/layout';
 import { PlaceSearch, PlaceDetails, NearbyPlaces } from './components/places';
-import { WeatherWidget, WeatherPanel } from './components/weather';
+import { WeatherPanel } from './components/weather';
 import { MeasurementTool } from './components/tools';
 import { FriendsPanel, UserProfile, SocialFeed } from './components/social';
 import { FlightSearch } from './components/flights';
 import { GroupTripPlanner } from './components/trips';
 import { IconButton } from './components/atoms/IconButton';
-import { FABGroup, FABGroupSeparator } from './components/molecules/FABGroup';
 import { useMapStore } from './stores/mapStore';
 import { usePlacesStore } from './stores/placesStore';
 import { useUIStore } from './stores/uiStore';
@@ -51,13 +54,26 @@ function App() {
   const [isReady, setIsReady] = useState(false);
   const { setCenter, setZoom } = useMapStore();
   const { selectedPlace, setSelectedPlace } = usePlacesStore();
-  const { sidePanelOpen, sidePanelContent, setSidePanelOpen, setSidePanelContent } = useUIStore();
+  const {
+    sidePanelOpen,
+    sidePanelContent,
+    setSidePanelOpen,
+    setSidePanelContent,
+    isMapInteracting,
+  } = useUIStore();
   const { addWaypoint, setProfile } = useRouteStore();
   const { updateFriendLocation } = useLocationShareStore();
-  const { currentLocation, isTracking } = useLocationStore();
+  const { currentLocation, isTracking, setIsTracking, setError } = useLocationStore();
   const { initializeAuth, isAuthenticated, token, isLoading: authLoading } = useAuthStore();
   const [showMeasurementTool, setShowMeasurementTool] = useState(false);
   const [isLoadingPoi, setIsLoadingPoi] = useState(false);
+  const [isSecondaryOpen, setIsSecondaryOpen] = useState(false);
+
+  useEffect(() => {
+    if (isMapInteracting) {
+      setIsSecondaryOpen(false);
+    }
+  }, [isMapInteracting]);
 
   const initializeLocation = async () => {
     try {
@@ -148,6 +164,12 @@ function App() {
       websocketService.sendLocationUpdate(currentLocation);
     }
   }, [currentLocation, isTracking]);
+
+  const handleStopTracking = () => {
+    locationService.stopTracking();
+    setIsTracking(false);
+    setError(null);
+  };
 
   // Handle regular map clicks - reverse geocode to get place info
   const handleMapClick = useCallback(async (coordinates: Coordinates) => {
@@ -266,85 +288,130 @@ function App() {
 
       <main id="main-content" className="w-full h-full">
         <MapView onMapClick={handleMapClick} onPoiClick={handlePoiClick}>
-        <LayerControl />
         <SearchBar />
-        <GPSIndicator />
-        <div className="absolute top-16 right-4 z-20">
-          <WeatherWidget
-            onExpand={() => {
-              setSidePanelContent('weather');
-              setSidePanelOpen(true);
-            }}
-          />
+        <div className="absolute top-20 left-4 z-20 flex flex-col gap-2">
+          <LayerControl />
+          <GPSIndicator variant="compact" />
         </div>
         
-        {/* Floating Action Buttons - Grouped by Intent */}
-        <div className="absolute bottom-20 left-4 z-20 flex flex-col gap-4">
-          {/* Social Group */}
-          <FABGroup label="Social" aria-label="Social actions">
-            <IconButton
-              icon={<UsersIcon className="w-5 h-5" />}
-              onClick={() => {
-                setSidePanelContent('friends');
-                setSidePanelOpen(true);
-              }}
-              tooltip="Friends"
-              aria-label="Open friends panel"
-            />
-            <IconButton
-              icon={<UserIcon className="w-5 h-5" />}
-              onClick={() => {
-                setSidePanelContent('profile');
-                setSidePanelOpen(true);
-              }}
-              tooltip="Profile"
-              aria-label="Open profile"
-            />
-            <IconButton
-              icon={<MapIcon className="w-5 h-5" />}
-              onClick={() => {
-                setSidePanelContent('trips');
-                setSidePanelOpen(true);
-              }}
-              tooltip="Group Trips"
-              aria-label="Open group trips"
-            />
-            <IconButton
-              icon={<NewspaperIcon className="w-5 h-5" />}
-              onClick={() => {
-                setSidePanelContent('feed');
-                setSidePanelOpen(true);
-              }}
-              tooltip="Social Feed"
-              aria-label="Open social feed"
-            />
-          </FABGroup>
+        {/* Secondary controls menu */}
+        <motion.div
+          animate={{ opacity: isMapInteracting ? 0 : 1, y: isMapInteracting ? 8 : 0 }}
+          transition={{ duration: 0.2 }}
+          className={`absolute bottom-20 left-4 z-20 ${isMapInteracting ? 'pointer-events-none' : ''}`}
+        >
+          <div className="flex flex-col gap-3">
+            <AnimatePresence>
+              {isSecondaryOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-elevation-3 dark:shadow-dark-md p-2 space-y-1 min-w-[180px]"
+                >
+                  <button
+                    onClick={() => {
+                      setSidePanelContent('weather');
+                      setSidePanelOpen(true);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <CloudIcon className="w-4 h-4 text-sky-500" />
+                    Weather
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSidePanelContent('flights');
+                      setSidePanelOpen(true);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <PaperAirplaneIcon className="w-4 h-4 text-indigo-500 -rotate-45" />
+                    Flights
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMeasurementTool(!showMeasurementTool);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <RulerIcon className="w-4 h-4 text-emerald-500" />
+                    Measurement
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSidePanelContent('friends');
+                      setSidePanelOpen(true);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <UsersIcon className="w-4 h-4 text-violet-500" />
+                    Friends
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSidePanelContent('profile');
+                      setSidePanelOpen(true);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <UserIcon className="w-4 h-4 text-slate-500" />
+                    Profile
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSidePanelContent('trips');
+                      setSidePanelOpen(true);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <MapIcon className="w-4 h-4 text-teal-500" />
+                    Trips
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSidePanelContent('feed');
+                      setSidePanelOpen(true);
+                      setIsSecondaryOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                  >
+                    <NewspaperIcon className="w-4 h-4 text-amber-500" />
+                    Social Feed
+                  </button>
+                  {isTracking && (
+                    <button
+                      onClick={() => {
+                        handleStopTracking();
+                        setIsSecondaryOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400"
+                    >
+                      <XMarkIcon className="w-4 h-4" />
+                      Stop tracking
+                    </button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          {/* Visual Separator */}
-          <FABGroupSeparator />
-
-          {/* Location Actions Group */}
-          <FABGroup label="Location" aria-label="Location actions">
             <IconButton
-              icon={<MapPinIcon className="w-5 h-5" />}
-              onClick={() => {
-                setSelectedPlace(null);
-                setSidePanelContent('places');
-                setSidePanelOpen(true);
-              }}
-              tooltip="Search places"
-              variant="primary"
-              aria-label="Search places"
+              icon={<Squares2X2Icon className="w-5 h-5" />}
+              onClick={() => setIsSecondaryOpen(!isSecondaryOpen)}
+              tooltip="More tools"
+              tooltipPosition="right"
+              variant="default"
+              aria-label="Open secondary tools menu"
             />
-            <IconButton
-              icon={<RulerIcon className="w-5 h-5" />}
-              onClick={() => setShowMeasurementTool(!showMeasurementTool)}
-              tooltip="Measure distance"
-              active={showMeasurementTool}
-              aria-label="Toggle measurement tool"
-            />
-          </FABGroup>
-        </div>
+          </div>
+        </motion.div>
 
         {showMeasurementTool && (
           <MeasurementTool onClose={() => setShowMeasurementTool(false)} />

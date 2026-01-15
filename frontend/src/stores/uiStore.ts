@@ -8,12 +8,14 @@ interface UIState {
   bottomSheetOpen: boolean;
   bottomSheetContent: 'route' | 'place' | null;
   darkMode: boolean;
+  isMapInteracting: boolean;
   setSidePanelOpen: (open: boolean) => void;
   setSidePanelContent: (content: SidePanelContent) => void;
   toggleSidePanel: () => void;
   setBottomSheetOpen: (open: boolean) => void;
   setBottomSheetContent: (content: 'route' | 'place' | null) => void;
   toggleDarkMode: () => void;
+  setMapInteracting: (isInteracting: boolean) => void;
 }
 
 // Initialize dark mode from localStorage
@@ -70,6 +72,7 @@ export const useUIStore = create<UIState>((set, get) => {
     bottomSheetOpen: false,
     bottomSheetContent: null,
     darkMode: initialDarkMode,
+    isMapInteracting: false,
 
     setSidePanelOpen: (open) => set({ sidePanelOpen: open }),
     setSidePanelContent: (content) =>
@@ -83,6 +86,7 @@ export const useUIStore = create<UIState>((set, get) => {
       applyDarkMode(newDarkMode);
       set({ darkMode: newDarkMode });
     },
+    setMapInteracting: (isInteracting) => set({ isMapInteracting: isInteracting }),
   };
 });
 
