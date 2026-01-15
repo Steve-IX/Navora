@@ -8,7 +8,6 @@ import {
   SunIcon,
   MoonIcon,
   ArrowRightOnRectangleIcon,
-  MapPinIcon,
   CloudIcon,
   PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
@@ -32,24 +31,10 @@ export const Header: React.FC = () => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md border-b border-white/40 dark:border-white/10 shadow-sm">
-        <div className="flex items-center justify-between px-4 h-[48px] md:h-[40px]">
-          {/* Logo & Brand */}
-          <motion.div
-            className="flex items-center gap-2"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-md shadow-brand-500/20">
-              <MapPinIcon className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-lg font-bold bg-gradient-to-r from-brand-500 to-brand-600 bg-clip-text text-transparent">
-              Maps
-            </h1>
-          </motion.div>
-
+      <header className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
+        <div className="flex items-center justify-end px-4 h-[48px] md:h-[40px]">
           {/* Right Section */}
-          <div className="flex items-center gap-2">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md border border-white/40 dark:border-white/10 shadow-sm px-2 py-1">
             {/* Weather + Flights shortcuts */}
             <motion.button
               whileHover={{ scale: 1.05 }}
