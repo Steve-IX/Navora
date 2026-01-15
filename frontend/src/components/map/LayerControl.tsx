@@ -34,11 +34,11 @@ export const LayerControl: React.FC = () => {
       animate={{ opacity: 1, x: 0 }}
       className="absolute top-4 left-4 z-10"
     >
-      <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-elevation-2 dark:shadow-dark-md overflow-hidden">
+      <div className="bg-white/70 dark:bg-dark-bg-secondary/60 backdrop-blur-md rounded-xl shadow-elevation-2 dark:shadow-dark-md border border-white/40 dark:border-white/10 overflow-hidden">
         {/* Header with expand/collapse */}
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-dark-text-primary hover:bg-white/40 dark:hover:bg-dark-bg-tertiary/60 transition-colors"
           aria-expanded={isExpanded}
           aria-controls="layer-control-content"
         >
@@ -73,7 +73,7 @@ export const LayerControl: React.FC = () => {
             />
 
             {/* Overlay toggles */}
-            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-dark-border-subtle">
+            <div className="space-y-3 pt-2 border-t border-white/40 dark:border-white/10">
               <div className="text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">
                 Overlays
               </div>
