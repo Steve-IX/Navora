@@ -22,8 +22,14 @@ npm run install:all
 # Build the shared types package (required before other packages)
 cd shared && npm run build
 
+# Watch shared types for changes (useful during development)
+cd shared && npm run watch
+
 # Start development servers (both frontend and backend)
 npm run dev
+
+# Start backend with debugger attached
+cd backend && npm run start:debug
 
 # Start backend only
 cd backend && npm run start:dev
@@ -42,6 +48,9 @@ npm run build
 cd shared && npm run build
 cd backend && npm run build
 cd frontend && npm run build
+
+# Preview production frontend build locally
+cd frontend && npm run preview
 ```
 
 ### Testing
@@ -49,6 +58,9 @@ cd frontend && npm run build
 ```bash
 # Backend tests
 cd backend && npm test
+
+# Run a single test file
+cd backend && npm test -- auth.service.spec
 
 # Backend tests with coverage
 cd backend && npm run test:cov
@@ -60,14 +72,24 @@ cd backend && npm run test:e2e
 cd backend && npm run test:watch
 ```
 
-### Linting
+### Linting & Formatting
 
 ```bash
-# Backend lint
+# Backend lint (auto-fixes)
 cd backend && npm run lint
+
+# Backend format with Prettier
+cd backend && npm run format
 
 # Frontend lint
 cd frontend && npm run lint
+```
+
+### Other Scripts
+
+```bash
+# Generate PWA icons (requires sharp)
+cd frontend && npm run generate-icons
 ```
 
 ### Database Management
@@ -123,29 +145,14 @@ import { Coordinates, User, Place } from '@shared/types';
 
 The backend follows NestJS modular architecture with clear separation of concerns:
 
-**Core Modules:**
-- `auth/` - JWT authentication, guest access, passport strategies
-- `users/` - User management and CRUD operations
-- `profiles/` - User profiles, bio, location sharing settings
+**Key Modules:**
+- `auth/` - JWT + guest authentication (Passport strategies)
 - `geocoding/` - Forward/reverse geocoding, autocomplete (Mapbox API)
-- `routing/` - Route calculation with multiple profiles (Mapbox Directions API)
-- `locations/` - Saved locations with PostGIS geometry
-- `routes/` - Route history storage
-- `places/` - Place search and management (Mapbox Places API)
+- `routing/` - Route calculation with profiles: `driving-traffic`, `driving`, `walking`, `cycling`
 - `websocket/` - Real-time location updates via Socket.io
-
-**Social Features:**
-- `friends/` - Friend requests, friendships
-- `location-shares/` - Share live location with friends
-- `trips/` - Group trip planning with waypoints
-- `checkins/` - Location check-ins
-- `reviews/` - Place reviews and ratings
-- `location-lists/` - Custom lists (e.g., "Want to Visit")
-- `feeds/` - Social activity feed
-
-**Infrastructure:**
-- `config/` - Database configuration, initialization service
-- `common/` - Shared filters, decorators, utilities
+- `places/`, `locations/`, `routes/` - Data persistence with PostGIS
+- Social features: `friends/`, `location-shares/`, `trips/`, `checkins/`, `reviews/`, `feeds/`
+- Infrastructure: `config/` (DB init, PostGIS setup), `common/` (filters, decorators)
 
 **Important Patterns:**
 - All entities use TypeORM decorators
@@ -172,18 +179,24 @@ The app uses Zustand stores for global state (located in `frontend/src/stores/`)
 - `routeStore.ts` - Route planning, waypoints, profile selection
 - `locationStore.ts` - GPS tracking, current location
 - `locationShareStore.ts` - Friend locations (WebSocket updates)
+- `searchStore.ts` - Search input, history, suggestions
+- `profileStore.ts` - User profile data
+- `friendsStore.ts` - Friends list, friend requests
+- `tripsStore.ts` - Group trip planning state
 
-**Component Structure:**
-- `components/map/` - MapView (Mapbox GL), LayerControl, MapStyleControl
-- `components/search/` - SearchBar for places and addresses
-- `components/routing/` - RoutePlanner sidebar, DirectionsList
-- `components/places/` - PlaceSearch, PlaceDetails, NearbyPlaces
-- `components/location/` - GPSIndicator for location tracking
-- `components/social/` - FriendsPanel, LocationSharePanel, SocialFeed, UserProfile
-- `components/trips/` - GroupTripPlanner
-- `components/auth/` - AuthPage, LoginModal, RegisterModal, AuthGuard
-- `components/layout/` - Header, SidePanel, BottomSheet
-- `components/tools/` - MeasurementTool
+**Component Structure (Atomic Design):**
+
+The frontend uses atomic design principles:
+- `components/atoms/` - Smallest UI building blocks
+- `components/molecules/` - Combinations of atoms
+- `components/ui/` - Reusable UI components (Skeleton, Toast, BottomSheet)
+
+Feature-specific components are organized by domain: `map/`, `search/`, `routing/`, `navigation/`, `places/`, `social/`, `auth/`, etc.
+
+**Styling & Animation:**
+- Tailwind CSS for utility-first styling (config in `tailwind.config.js`)
+- Framer Motion for animations
+- PWA support via `vite-plugin-pwa` and Workbox
 
 **Services:**
 Services in `frontend/src/services/` handle API communication:
@@ -247,8 +260,6 @@ const point: Point = {
 
 ### Route Planning
 
-The app supports multi-waypoint routing with different travel profiles:
-- Profiles: `driving-traffic`, `driving`, `walking`, `cycling`
 - Waypoints stored in `routeStore` as `Waypoint[]`
 - Route calculation via `/routing/route` endpoint (Mapbox Directions API)
 - Results include geometry (LineString), distance, duration, steps

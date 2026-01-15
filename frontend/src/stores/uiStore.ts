@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 
+type SidePanelContent = 'places' | 'navigation' | 'saved' | 'friends' | 'profile' | 'trips' | 'feed' | 'weather' | 'flights' | null;
+
 interface UIState {
   sidePanelOpen: boolean;
-  sidePanelContent: 'places' | 'navigation' | 'saved' | 'friends' | 'profile' | 'trips' | 'feed' | null;
+  sidePanelContent: SidePanelContent;
   bottomSheetOpen: boolean;
   bottomSheetContent: 'route' | 'place' | null;
   darkMode: boolean;
   setSidePanelOpen: (open: boolean) => void;
-  setSidePanelContent: (content: 'places' | 'navigation' | 'saved' | 'friends' | 'profile' | 'trips' | 'feed' | null) => void;
+  setSidePanelContent: (content: SidePanelContent) => void;
   toggleSidePanel: () => void;
   setBottomSheetOpen: (open: boolean) => void;
   setBottomSheetContent: (content: 'route' | 'place' | null) => void;

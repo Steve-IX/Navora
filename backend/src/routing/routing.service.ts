@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -11,16 +11,114 @@ import {
 } from '@shared/types/routing';
 import { GeocodingService } from '../geocoding/geocoding.service';
 
+// Flight API types
+export interface FlightSearchParams {
+  flightNumber?: string;
+  departureAirport?: string;
+  arrivalAirport?: string;
+  airlineIata?: string;
+  flightStatus?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AirportSearchParams {
+  search?: string;
+  countryCode?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface FlightData {
+  flightNumber: string;
+  airline: {
+    name: string;
+    iata: string;
+    icao: string;
+  };
+  departure: {
+    airport: string;
+    iata: string;
+    icao: string;
+    terminal: string | null;
+    gate: string | null;
+    scheduled: string | null;
+    estimated: string | null;
+    actual: string | null;
+    timezone: string;
+  };
+  arrival: {
+    airport: string;
+    iata: string;
+    icao: string;
+    terminal: string | null;
+    gate: string | null;
+    scheduled: string | null;
+    estimated: string | null;
+    actual: string | null;
+    timezone: string;
+  };
+  status: string;
+  aircraft: {
+    registration: string;
+    iata: string;
+    icao: string;
+  } | null;
+  live: {
+    latitude: number;
+    longitude: number;
+    altitude: number;
+    speed: number;
+    direction: number;
+    isGround: boolean;
+    updated: string;
+  } | null;
+}
+
+export interface AirportData {
+  name: string;
+  iata: string;
+  icao: string;
+  city: string;
+  country: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+}
+
+export interface FlightSearchResponse {
+  flights: FlightData[];
+  pagination: {
+    limit: number;
+    offset: number;
+    count: number;
+    total: number;
+  };
+}
+
+export interface AirportSearchResponse {
+  airports: AirportData[];
+  pagination: {
+    limit: number;
+    offset: number;
+    count: number;
+    total: number;
+  };
+}
+
 /**
  * Simplified Route Planner Service
  * Inspired by Google Maps - clean, simple, reliable
  */
 @Injectable()
 export class RoutingService {
+  private readonly logger = new Logger(RoutingService.name);
   private readonly mapboxAccessToken: string;
   private readonly mapboxApiUrl = 'https://api.mapbox.com/directions/v5';
   private readonly aviationStackApiKey: string;
-  private readonly aviationStackApiUrl = 'https://api.aviationstack.com/v1';
+  // Note: AviationStack free tier only supports HTTP
+  private readonly aviationStackApiUrl = 'http://api.aviationstack.com/v1';
 
   constructor(
     private httpService: HttpService,
@@ -32,6 +130,9 @@ export class RoutingService {
       throw new Error('MAPBOX_ACCESS_TOKEN is required');
     }
     this.aviationStackApiKey = this.configService.get<string>('AVIATIONSTACK_API_KEY') || '';
+    if (!this.aviationStackApiKey) {
+      this.logger.warn('AVIATIONSTACK_API_KEY not configured - flight search disabled');
+    }
   }
 
   /**
@@ -576,6 +677,224 @@ export class RoutingService {
         name: waypoints[index]?.name,
       })),
     };
+  }
+
+  // ============================================
+  // AviationStack API Integration
+  // ============================================
+
+  /**
+   * Search for flights using AviationStack API
+   */
+  async searchFlights(params: FlightSearchParams): Promise<FlightSearchResponse> {
+    if (!this.aviationStackApiKey) {
+      throw new HttpException(
+        'Flight search service not configured',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    try {
+      const queryParams: Record<string, string> = {
+        access_key: this.aviationStackApiKey,
+      };
+
+      // Map our params to AviationStack API params
+      if (params.flightNumber) {
+        queryParams.flight_iata = params.flightNumber.toUpperCase();
+      }
+      if (params.departureAirport) {
+        queryParams.dep_iata = params.departureAirport.toUpperCase();
+      }
+      if (params.arrivalAirport) {
+        queryParams.arr_iata = params.arrivalAirport.toUpperCase();
+      }
+      if (params.airlineIata) {
+        queryParams.airline_iata = params.airlineIata.toUpperCase();
+      }
+      if (params.flightStatus) {
+        queryParams.flight_status = params.flightStatus;
+      }
+      if (params.limit) {
+        queryParams.limit = params.limit.toString();
+      }
+      if (params.offset) {
+        queryParams.offset = params.offset.toString();
+      }
+
+      this.logger.debug(`Searching flights with params: ${JSON.stringify(params)}`);
+
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.aviationStackApiUrl}/flights`, {
+          params: queryParams,
+        }),
+      );
+
+      // AviationStack returns errors in response body
+      if (response.data.error) {
+        this.logger.error(`AviationStack API error: ${response.data.error.info}`);
+        throw new HttpException(
+          response.data.error.info || 'Flight data unavailable',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      return {
+        flights: this.transformFlightData(response.data.data || []),
+        pagination: response.data.pagination || {
+          limit: params.limit || 100,
+          offset: params.offset || 0,
+          count: (response.data.data || []).length,
+          total: (response.data.data || []).length,
+        },
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+
+      this.logger.error(`Flight search failed: ${error.message}`);
+      throw new HttpException(
+        'Failed to fetch flight data',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Search for airports using AviationStack API
+   */
+  async searchAirports(params: AirportSearchParams): Promise<AirportSearchResponse> {
+    if (!this.aviationStackApiKey) {
+      throw new HttpException(
+        'Airport search service not configured',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    try {
+      const queryParams: Record<string, string> = {
+        access_key: this.aviationStackApiKey,
+      };
+
+      if (params.search) {
+        queryParams.search = params.search;
+      }
+      if (params.countryCode) {
+        queryParams.country_iso2 = params.countryCode.toUpperCase();
+      }
+      if (params.limit) {
+        queryParams.limit = params.limit.toString();
+      }
+      if (params.offset) {
+        queryParams.offset = params.offset.toString();
+      }
+
+      this.logger.debug(`Searching airports with params: ${JSON.stringify(params)}`);
+
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.aviationStackApiUrl}/airports`, {
+          params: queryParams,
+        }),
+      );
+
+      // AviationStack returns errors in response body
+      if (response.data.error) {
+        this.logger.error(`AviationStack API error: ${response.data.error.info}`);
+        throw new HttpException(
+          response.data.error.info || 'Airport data unavailable',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      return {
+        airports: this.transformAirportData(response.data.data || []),
+        pagination: response.data.pagination || {
+          limit: params.limit || 100,
+          offset: params.offset || 0,
+          count: (response.data.data || []).length,
+          total: (response.data.data || []).length,
+        },
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+
+      this.logger.error(`Airport search failed: ${error.message}`);
+      throw new HttpException(
+        'Failed to fetch airport data',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Transform raw AviationStack flight data to our format
+   */
+  private transformFlightData(rawFlights: any[]): FlightData[] {
+    return rawFlights.map((flight) => ({
+      flightNumber: flight.flight?.iata || flight.flight?.icao || 'Unknown',
+      airline: {
+        name: flight.airline?.name || 'Unknown',
+        iata: flight.airline?.iata || '',
+        icao: flight.airline?.icao || '',
+      },
+      departure: {
+        airport: flight.departure?.airport || 'Unknown',
+        iata: flight.departure?.iata || '',
+        icao: flight.departure?.icao || '',
+        terminal: flight.departure?.terminal || null,
+        gate: flight.departure?.gate || null,
+        scheduled: flight.departure?.scheduled || null,
+        estimated: flight.departure?.estimated || null,
+        actual: flight.departure?.actual || null,
+        timezone: flight.departure?.timezone || '',
+      },
+      arrival: {
+        airport: flight.arrival?.airport || 'Unknown',
+        iata: flight.arrival?.iata || '',
+        icao: flight.arrival?.icao || '',
+        terminal: flight.arrival?.terminal || null,
+        gate: flight.arrival?.gate || null,
+        scheduled: flight.arrival?.scheduled || null,
+        estimated: flight.arrival?.estimated || null,
+        actual: flight.arrival?.actual || null,
+        timezone: flight.arrival?.timezone || '',
+      },
+      status: flight.flight_status || 'unknown',
+      aircraft: flight.aircraft
+        ? {
+            registration: flight.aircraft.registration || '',
+            iata: flight.aircraft.iata || '',
+            icao: flight.aircraft.icao || '',
+          }
+        : null,
+      live: flight.live
+        ? {
+            latitude: parseFloat(flight.live.latitude) || 0,
+            longitude: parseFloat(flight.live.longitude) || 0,
+            altitude: parseFloat(flight.live.altitude) || 0,
+            speed: parseFloat(flight.live.speed_horizontal) || 0,
+            direction: parseFloat(flight.live.direction) || 0,
+            isGround: flight.live.is_ground || false,
+            updated: flight.live.updated || '',
+          }
+        : null,
+    }));
+  }
+
+  /**
+   * Transform raw AviationStack airport data to our format
+   */
+  private transformAirportData(rawAirports: any[]): AirportData[] {
+    return rawAirports.map((airport) => ({
+      name: airport.airport_name || 'Unknown',
+      iata: airport.iata_code || '',
+      icao: airport.icao_code || '',
+      city: airport.city_iata_code || '',
+      country: airport.country_name || '',
+      countryCode: airport.country_iso2 || '',
+      latitude: parseFloat(airport.latitude) || 0,
+      longitude: parseFloat(airport.longitude) || 0,
+      timezone: airport.timezone || '',
+    }));
   }
 }
 

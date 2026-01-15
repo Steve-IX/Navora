@@ -9,12 +9,15 @@ import {
   MoonIcon,
   ArrowRightOnRectangleIcon,
   MapPinIcon,
+  CloudIcon,
+  PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 
 export const Header: React.FC = () => {
   const { user, isAuthenticated, logout } = useAuthStore();
   const { profile } = useProfileStore();
-  const { darkMode, toggleDarkMode } = useUIStore();
+  const { darkMode, toggleDarkMode, setSidePanelContent, setSidePanelOpen } =
+    useUIStore();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -47,6 +50,32 @@ export const Header: React.FC = () => {
 
           {/* Right Section */}
           <div className="flex items-center gap-2">
+            {/* Weather + Flights shortcuts */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setSidePanelContent('weather');
+                setSidePanelOpen(true);
+              }}
+              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              aria-label="Open weather panel"
+            >
+              <CloudIcon className="w-5 h-5" />
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setSidePanelContent('flights');
+                setSidePanelOpen(true);
+              }}
+              className="p-2.5 rounded-xl text-gray-500 dark:text-dark-text-secondary hover:text-gray-700 dark:hover:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
+              aria-label="Open flights panel"
+            >
+              <PaperAirplaneIcon className="w-5 h-5 -rotate-45" />
+            </motion.button>
+
             {/* Theme Toggle */}
             <motion.button
               whileHover={{ scale: 1.05 }}

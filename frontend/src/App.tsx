@@ -13,8 +13,10 @@ import { RoutePlanner } from './components/routing/RoutePlanner';
 import { GPSIndicator } from './components/location/GPSIndicator';
 import { SidePanel, Header } from './components/layout';
 import { PlaceSearch, PlaceDetails, NearbyPlaces } from './components/places';
+import { WeatherWidget, WeatherPanel } from './components/weather';
 import { MeasurementTool } from './components/tools';
 import { FriendsPanel, UserProfile, SocialFeed } from './components/social';
+import { FlightSearch } from './components/flights';
 import { GroupTripPlanner } from './components/trips';
 import { IconButton } from './components/atoms/IconButton';
 import { FABGroup, FABGroupSeparator } from './components/molecules/FABGroup';
@@ -267,6 +269,14 @@ function App() {
         <LayerControl />
         <SearchBar />
         <GPSIndicator />
+        <div className="absolute top-16 right-4 z-20">
+          <WeatherWidget
+            onExpand={() => {
+              setSidePanelContent('weather');
+              setSidePanelOpen(true);
+            }}
+          />
+        </div>
         
         {/* Floating Action Buttons - Grouped by Intent */}
         <div className="absolute bottom-20 left-4 z-20 flex flex-col gap-4">
@@ -434,6 +444,30 @@ function App() {
         <div className="p-4">
           <SocialFeed />
         </div>
+      </SidePanel>
+
+      {/* Side Panel for Weather */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'weather'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        width="md"
+      >
+        <WeatherPanel />
+      </SidePanel>
+
+      {/* Side Panel for Flights */}
+      <SidePanel
+        isOpen={sidePanelOpen && sidePanelContent === 'flights'}
+        onClose={() => {
+          setSidePanelOpen(false);
+          setSidePanelContent(null);
+        }}
+        width="md"
+      >
+        <FlightSearch />
       </SidePanel>
 
       {/* Toast Notifications */}

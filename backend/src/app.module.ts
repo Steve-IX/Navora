@@ -19,6 +19,7 @@ import { CheckInsModule } from './checkins/checkins.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { LocationListsModule } from './location-lists/location-lists.module';
 import { FeedsModule } from './feeds/feeds.module';
+import { WeatherModule } from './weather/weather.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 
@@ -66,6 +67,7 @@ import { AppController } from './app.controller';
     ReviewsModule,
     LocationListsModule,
     FeedsModule,
+    WeatherModule,
   ],
   providers: [
     {

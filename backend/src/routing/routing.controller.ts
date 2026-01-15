@@ -1,8 +1,9 @@
-import { Controller, Post, Body, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
-import { RoutingService } from './routing.service';
+import { Controller, Post, Body, Get, Query, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
+import { RoutingService, FlightSearchParams, AirportSearchParams } from './routing.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../common/decorators/public.decorator';
 import { RoutingRequest } from '@shared/types/routing';
-import { IsArray, IsNotEmpty, ValidateNested, IsEnum, IsOptional, IsBoolean, IsIn, IsNumber, IsObject, ValidateIf } from 'class-validator';
+import { IsArray, IsNotEmpty, ValidateNested, IsEnum, IsOptional, IsBoolean, IsIn, IsNumber, IsObject, IsString, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RoutingProfile } from '@shared/types/routing';
 
@@ -53,6 +54,58 @@ class RoutingRequestDto implements RoutingRequest {
   steps?: boolean;
 }
 
+class FlightSearchDto implements FlightSearchParams {
+  @IsOptional()
+  @IsString()
+  flightNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  departureAirport?: string;
+
+  @IsOptional()
+  @IsString()
+  arrivalAirport?: string;
+
+  @IsOptional()
+  @IsString()
+  airlineIata?: string;
+
+  @IsOptional()
+  @IsString()
+  flightStatus?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  offset?: number;
+}
+
+class AirportSearchDto implements AirportSearchParams {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  countryCode?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  offset?: number;
+}
+
 @Controller('routing')
 @UseGuards(JwtAuthGuard)
 export class RoutingController {
@@ -80,6 +133,40 @@ export class RoutingController {
       console.error('Unexpected routing error:', error);
       throw new HttpException(
         error?.message || 'Failed to calculate route',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('flights/search')
+  @Public()
+  async searchFlights(@Query() params: FlightSearchDto) {
+    try {
+      return await this.routingService.searchFlights(params);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('Unexpected flight search error:', error);
+      throw new HttpException(
+        error?.message || 'Failed to search flights',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('airports/search')
+  @Public()
+  async searchAirports(@Query() params: AirportSearchDto) {
+    try {
+      return await this.routingService.searchAirports(params);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('Unexpected airport search error:', error);
+      throw new HttpException(
+        error?.message || 'Failed to search airports',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
