@@ -37,15 +37,7 @@ function getAccuracyInfo(meters: number | null): {
   return { label: 'Low accuracy', variant: 'error', description: `Within ${Math.round(meters)}m` };
 }
 
-interface GPSIndicatorProps {
-  variant?: 'full' | 'compact';
-  className?: string;
-}
-
-export const GPSIndicator: React.FC<GPSIndicatorProps> = ({
-  variant = 'full',
-  className = '',
-}) => {
+export const GPSIndicator: React.FC = () => {
   const [showDetails, setShowDetails] = useState(false);
   const {
     currentLocation,
@@ -142,35 +134,8 @@ export const GPSIndicator: React.FC<GPSIndicatorProps> = ({
     }
   };
 
-  if (variant === 'compact') {
-    return (
-      <div className={`flex flex-col gap-2 ${className}`}>
-        <div className="relative">
-          <IconButton
-            icon={<MapPinIcon className="w-5 h-5" />}
-            onClick={isTracking ? handleRecenter : handleStartTracking}
-            tooltip="My location"
-            tooltipPosition="right"
-            variant="default"
-            aria-label="Recenter map on location"
-          />
-          <span className="absolute -top-0.5 -right-0.5 relative">
-            <span
-              className={`block w-2.5 h-2.5 rounded-full ${
-                isTracking ? 'bg-success-500' : 'bg-gray-400 dark:bg-dark-text-muted'
-              }`}
-            />
-            {isTracking && (
-              <span className="absolute inset-0 rounded-full bg-success-400 opacity-60 animate-ping" />
-            )}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`absolute bottom-4 right-4 z-20 flex flex-col gap-2 ${className}`}>
+    <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
       {/* Main indicator card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}

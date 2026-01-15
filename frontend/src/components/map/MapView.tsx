@@ -38,8 +38,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
   } = useMapStore();
 
   const { currentLocation, accuracy, isTracking } = useLocationStore();
-  const { darkMode, setMapInteracting } = useUIStore();
-  const interactionTimeoutRef = useRef<number | null>(null);
+  const { darkMode } = useUIStore();
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -86,28 +85,6 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
         setZoom(map.current.getZoom());
       }
     });
-
-    const handleInteractionStart = () => {
-      if (interactionTimeoutRef.current) {
-        window.clearTimeout(interactionTimeoutRef.current);
-        interactionTimeoutRef.current = null;
-      }
-      setMapInteracting(true);
-    };
-
-    const handleInteractionEnd = () => {
-      if (interactionTimeoutRef.current) {
-        window.clearTimeout(interactionTimeoutRef.current);
-      }
-      interactionTimeoutRef.current = window.setTimeout(() => {
-        setMapInteracting(false);
-      }, 1200);
-    };
-
-    map.current.on('movestart', handleInteractionStart);
-    map.current.on('moveend', handleInteractionEnd);
-    map.current.on('zoomstart', handleInteractionStart);
-    map.current.on('zoomend', handleInteractionEnd);
 
     map.current.on('rotate', () => {
       if (map.current) {
@@ -189,10 +166,6 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
     return () => {
       if (map.current) {
-        if (interactionTimeoutRef.current) {
-          window.clearTimeout(interactionTimeoutRef.current);
-          interactionTimeoutRef.current = null;
-        }
         map.current.remove();
         map.current = null;
       }
