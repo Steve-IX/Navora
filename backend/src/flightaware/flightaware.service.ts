@@ -358,16 +358,25 @@ export class FlightawareService {
 
   private normalizeFlightDetails(entry: AeroApiResponse): NormalizedFlightDetails {
     const summary = this.normalizeLiveFlight(entry);
+    
+    // Extract gate info from origin/destination objects if available
+    const originGate = entry.origin?.gate ?? entry.gate_origin ?? entry.gate_departure ?? entry.gate;
+    const destGate = entry.destination?.gate ?? entry.gate_destination ?? entry.gate_arrival;
+    
+    // Extract terminal info
+    const originTerminal = entry.origin?.terminal ?? entry.terminal_origin ?? entry.terminal_departure ?? entry.terminal;
+    const destTerminal = entry.destination?.terminal ?? entry.terminal_destination ?? entry.terminal_arrival;
+    
     return {
       ...summary,
-      gate: {
-        origin: entry.gate_origin ?? entry.gate_departure ?? entry.gate,
-        destination: entry.gate_destination ?? entry.gate_arrival,
-      },
-      terminal: {
-        origin: entry.terminal_origin ?? entry.terminal_departure ?? entry.terminal,
-        destination: entry.terminal_destination ?? entry.terminal_arrival,
-      },
+      gate: (originGate || destGate) ? {
+        origin: originGate,
+        destination: destGate,
+      } : undefined,
+      terminal: (originTerminal || destTerminal) ? {
+        origin: originTerminal,
+        destination: destTerminal,
+      } : undefined,
       scheduled: {
         off: entry.scheduled_out ?? entry.scheduled_off ?? entry.departure_time?.scheduled,
         on: entry.scheduled_in ?? entry.scheduled_on ?? entry.arrival_time?.scheduled,
@@ -389,10 +398,10 @@ export class FlightawareService {
             })),
           }
         : undefined,
-      aircraft: entry.aircraft_type || entry.aircraft_registration
+      aircraft: (entry.aircraft_type || entry.aircraft_registration || entry.aircraft)
         ? {
-            registration: entry.aircraft_registration ?? entry.registration,
-            type: entry.aircraft_type ?? entry.aircraft?.type,
+            registration: entry.aircraft_registration ?? entry.registration ?? entry.aircraft?.registration,
+            type: entry.aircraft_type ?? entry.aircraft?.type ?? entry.type,
           }
         : undefined,
     };
@@ -400,9 +409,17 @@ export class FlightawareService {
 
   private normalizeOperator(entry: AeroApiResponse): NormalizedOperator | undefined {
     const operator = entry.operator ?? entry.operator_name ?? entry.airline?.name;
-    const icao = entry.operator_icao ?? entry.operator_icao_code ?? entry.airline?.icao;
+    let icao = entry.operator_icao ?? entry.operator_icao_code ?? entry.airline?.icao;
     const iata = entry.operator_iata ?? entry.operator_iata_code ?? entry.airline?.iata;
     const callsign = entry.operator_callsign ?? entry.airline?.callsign;
+
+    // Extract ICAO from ident if not available (e.g., "BAW95" -> "BAW")
+    if (!icao && entry.ident) {
+      const match = entry.ident.match(/^([A-Z]{3})/);
+      if (match) {
+        icao = match[1];
+      }
+    }
 
     if (!operator && !icao && !iata && !callsign) {
       return undefined;
