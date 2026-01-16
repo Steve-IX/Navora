@@ -414,7 +414,7 @@ export class FlightawareService {
     const parts: string[] = [
       `{range lat ${bounds.minLat} ${bounds.maxLat}}`,
       `{range lon ${bounds.minLon} ${bounds.maxLon}}`,
-      '{true inAir}',
+      '{inAir 1}',
     ];
 
     if (query.minAltitude !== undefined) {
