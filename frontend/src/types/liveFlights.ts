@@ -30,6 +30,7 @@ export interface LiveFlightPosition {
 
 export interface LiveFlightSummary {
   id: string;
+  faFlightId?: string;
   callsign?: string;
   flightNumber?: string;
   operator?: LiveFlightOperator;

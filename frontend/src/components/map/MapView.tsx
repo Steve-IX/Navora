@@ -16,7 +16,7 @@ const LIVE_FLIGHTS_SOURCE_ID = 'live-flights';
 const LIVE_FLIGHTS_CLUSTER_LAYER_ID = 'live-flights-clusters';
 const LIVE_FLIGHTS_CLUSTER_COUNT_LAYER_ID = 'live-flights-cluster-count';
 const LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID = 'live-flights-unclustered';
-const LIVE_FLIGHTS_POLL_INTERVAL_MS = 15000;
+const LIVE_FLIGHTS_POLL_INTERVAL_MS = 30000; // 30 seconds to reduce API calls
 const LIVE_FLIGHTS_RENDER_INTERVAL_MS = 120;
 
 interface MapViewProps {
@@ -139,7 +139,30 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     });
 
     map.current.on('click', (e) => {
-      // Check if we clicked on a POI first
+      // Check if we clicked on a flight layer first - if so, ignore this click
+      // (the flight click handler will handle it)
+      const flightLayers = [
+        LIVE_FLIGHTS_CLUSTER_LAYER_ID,
+        LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID,
+      ].filter((layerId) => {
+        try {
+          return map.current?.getLayer(layerId) !== undefined;
+        } catch {
+          return false;
+        }
+      });
+
+      if (flightLayers.length > 0) {
+        const flightFeatures = map.current?.queryRenderedFeatures(e.point, {
+          layers: flightLayers,
+        });
+        if (flightFeatures && flightFeatures.length > 0) {
+          // Click was on a flight layer - don't trigger POI or map click
+          return;
+        }
+      }
+
+      // Check if we clicked on a POI
       // Only query layers that actually exist in the current style
       const availableLayers = getPoiLayers().filter(layerName => {
         try {

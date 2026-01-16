@@ -129,9 +129,11 @@ export class RoutingService {
     if (!this.mapboxAccessToken) {
       throw new Error('MAPBOX_ACCESS_TOKEN is required');
     }
-    this.aviationStackApiKey = this.configService.get<string>('AVIATIONSTACK_API_KEY') || '';
+    this.aviationStackApiKey = this.configService.get<string>('AVIATIONSTACK_KEY') 
+      || this.configService.get<string>('AVIATIONSTACK_API_KEY') 
+      || '';
     if (!this.aviationStackApiKey) {
-      this.logger.warn('AVIATIONSTACK_API_KEY not configured - flight search disabled');
+      this.logger.warn('AVIATIONSTACK_KEY not configured - flight search disabled');
     }
   }
 
