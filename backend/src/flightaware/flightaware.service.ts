@@ -86,15 +86,31 @@ export class FlightawareService {
     const queryString = this.buildAeroApiQuery(query, bounds);
     const maxPages = Math.max(1, Math.min(3, Math.ceil((max ?? 200) / 15)));
 
-    const response = await this.aeroApiGet<AeroApiResponse>('/flights/search/positions', {
-      query: queryString,
-      max_pages: maxPages,
-    });
+    this.logger.log(`AeroAPI query: ${queryString}`);
+
+    let response: AeroApiResponse;
+    try {
+      // Try search/positions first (uses query syntax)
+      response = await this.aeroApiGet<AeroApiResponse>('/flights/search/positions', {
+        query: queryString,
+        max_pages: maxPages,
+      });
+    } catch (searchPositionsError: any) {
+      // If search/positions fails, fall back to /flights/search with simpler params
+      this.logger.warn(
+        `search/positions failed, trying /flights/search fallback`,
+      );
+      response = await this.aeroApiGet<AeroApiResponse>('/flights/search', {
+        type: 'Airline',
+        max_pages: maxPages,
+      });
+    }
 
     const entries = this.extractPositions(response);
     const flights = entries
       .map((entry) => this.normalizeLiveFlight(entry))
       .filter((flight) => this.applyPostFilters(flight, query))
+      .filter((flight) => this.filterByBounds(flight, bounds))
       .slice(0, max ?? 200);
 
     return {
@@ -104,6 +120,20 @@ export class FlightawareService {
       stale: false,
       source: 'aeroapi',
     };
+  }
+
+  private filterByBounds(
+    flight: NormalizedFlightSummary,
+    bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number },
+  ): boolean {
+    if (!flight.position) return false;
+    const { latitude, longitude } = flight.position;
+    return (
+      latitude >= bounds.minLat &&
+      latitude <= bounds.maxLat &&
+      longitude >= bounds.minLon &&
+      longitude <= bounds.maxLon
+    );
   }
 
   private async fetchFlightDetailsFromAeroApi(
@@ -411,10 +441,10 @@ export class FlightawareService {
     query: LiveFlightsQuery,
     bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number },
   ): string {
+    // Build query without inAir filter first to test basic syntax
     const parts: string[] = [
-      `{range lat ${bounds.minLat} ${bounds.maxLat}}`,
-      `{range lon ${bounds.minLon} ${bounds.maxLon}}`,
-      '{inAir 1}',
+      `{range lat ${bounds.minLat.toFixed(2)} ${bounds.maxLat.toFixed(2)}}`,
+      `{range lon ${bounds.minLon.toFixed(2)} ${bounds.maxLon.toFixed(2)}}`,
     ];
 
     if (query.minAltitude !== undefined) {

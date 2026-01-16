@@ -14,7 +14,7 @@ export const LiveFlightControls: React.FC = () => {
   } = useLiveFlightStore();
 
   return (
-    <div className="absolute top-4 left-4 z-10 w-72 rounded-xl bg-white/95 p-4 shadow-lg backdrop-blur dark:bg-slate-900/95">
+    <div className="absolute bottom-24 right-4 z-10 w-72 rounded-xl bg-white/95 p-4 shadow-lg backdrop-blur dark:bg-slate-900/95">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-slate-900 dark:text-white">Live Flights</p>
