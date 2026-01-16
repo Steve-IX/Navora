@@ -29,10 +29,30 @@ export const LiveFlightDetailsPanel: React.FC<LiveFlightDetailsPanelProps> = ({
   const hasOrigin = flight?.origin?.iata || flight?.origin?.icao;
   const hasDestination = flight?.destination?.iata || flight?.destination?.icao;
 
-  const flightAwareUrl = flight?.faFlightId
-    ? `https://flightaware.com/live/flight/${flight.faFlightId}`
-    : flight?.callsign
-    ? `https://flightaware.com/live/flight/${flight.callsign}`
+  // FlightAware uses the callsign/ident in URLs, not the internal fa_flight_id
+  // Extract just the flight identifier (e.g., "VIR23" from "VIR23-1234567-airline-123p")
+  const getFlightAwareIdent = (): string | null => {
+    // Prefer callsign as it's the public identifier
+    if (flight?.callsign) {
+      return flight.callsign;
+    }
+    // If we have flightNumber (IATA format like "VS23"), use it
+    if (flight?.flightNumber) {
+      return flight.flightNumber;
+    }
+    // Extract ident from fa_flight_id (format: "IDENT-timestamp-type-id")
+    if (flight?.faFlightId) {
+      const parts = flight.faFlightId.split('-');
+      if (parts.length > 0 && parts[0]) {
+        return parts[0];
+      }
+    }
+    return null;
+  };
+
+  const flightIdent = getFlightAwareIdent();
+  const flightAwareUrl = flightIdent
+    ? `https://www.flightaware.com/live/flight/${flightIdent}`
     : null;
 
   // Determine if the flight is likely on ground (has status but no altitude/speed)

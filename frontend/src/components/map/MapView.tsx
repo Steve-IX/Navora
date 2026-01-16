@@ -16,7 +16,7 @@ const LIVE_FLIGHTS_SOURCE_ID = 'live-flights';
 const LIVE_FLIGHTS_CLUSTER_LAYER_ID = 'live-flights-clusters';
 const LIVE_FLIGHTS_CLUSTER_COUNT_LAYER_ID = 'live-flights-cluster-count';
 const LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID = 'live-flights-unclustered';
-const LIVE_FLIGHTS_POLL_INTERVAL_MS = 30000; // 30 seconds to reduce API calls
+const LIVE_FLIGHTS_POLL_INTERVAL_MS = 60000; // 60 seconds to reduce API calls and respect rate limits
 const LIVE_FLIGHTS_RENDER_INTERVAL_MS = 120;
 
 interface MapViewProps {

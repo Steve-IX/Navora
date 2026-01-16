@@ -15,8 +15,10 @@ import {
   NormalizedPosition,
 } from './types';
 
-const LIVE_CACHE_TTL_SECONDS = 15;
-const DETAILS_CACHE_TTL_SECONDS = 120;
+// Cache TTLs in milliseconds (cache-manager v5+ uses ms)
+const LIVE_CACHE_TTL_MS = 60 * 1000; // 60 seconds - reduce API calls
+const DETAILS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes for flight details
+const RATE_LIMIT_CACHE_TTL_MS = 30 * 1000; // Cache rate limit errors for 30s
 
 type AeroApiResponse = Record<string, any>;
 
@@ -38,11 +40,22 @@ export class FlightawareService {
       return { ...cached, source: 'cache', stale: false };
     }
 
+    // Check if we're in a rate-limit cooldown period
+    const rateLimitKey = 'flights:rate_limited';
+    const isRateLimited = await this.cacheManager.get<boolean>(rateLimitKey);
+    if (isRateLimited) {
+      throw new HttpException('API rate limit - please wait', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     try {
       const response = await this.fetchLiveFlightsFromAeroApi(query);
-      await this.cacheManager.set(cacheKey, response, LIVE_CACHE_TTL_SECONDS);
+      await this.cacheManager.set(cacheKey, response, LIVE_CACHE_TTL_MS);
       return response;
-    } catch (error) {
+    } catch (error: any) {
+      // If rate limited, set cooldown to prevent hammering the API
+      if (error?.status === 429 || error?.response?.status === 429) {
+        await this.cacheManager.set(rateLimitKey, true, RATE_LIMIT_CACHE_TTL_MS);
+      }
       this.logger.warn(`Live flights fetch failed: ${this.errorMessage(error)}`);
       if (cached) {
         return { ...cached, source: 'cache', stale: true };
@@ -62,11 +75,22 @@ export class FlightawareService {
       return { ...cached, source: 'cache', stale: false };
     }
 
+    // Check if we're in a rate-limit cooldown period
+    const rateLimitKey = 'flights:rate_limited';
+    const isRateLimited = await this.cacheManager.get<boolean>(rateLimitKey);
+    if (isRateLimited) {
+      throw new HttpException('API rate limit - please wait', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     try {
       const response = await this.fetchFlightDetailsFromAeroApi(flightId);
-      await this.cacheManager.set(cacheKey, response, DETAILS_CACHE_TTL_SECONDS);
+      await this.cacheManager.set(cacheKey, response, DETAILS_CACHE_TTL_MS);
       return response;
-    } catch (error) {
+    } catch (error: any) {
+      // If rate limited, set cooldown to prevent hammering the API
+      if (error?.status === 429 || error?.response?.status === 429) {
+        await this.cacheManager.set(rateLimitKey, true, RATE_LIMIT_CACHE_TTL_MS);
+      }
       this.logger.warn(`Flight details fetch failed: ${this.errorMessage(error)}`);
       if (cached) {
         return { ...cached, source: 'cache', stale: true };
