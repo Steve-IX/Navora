@@ -42,6 +42,7 @@ export interface NormalizedPosition {
 
 export interface NormalizedFlightSummary {
   id: string;
+  faFlightId?: string;
   callsign?: string;
   flightNumber?: string;
   operator?: NormalizedOperator;

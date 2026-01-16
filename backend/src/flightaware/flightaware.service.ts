@@ -301,12 +301,26 @@ export class FlightawareService {
 
   private normalizeLiveFlight(entry: AeroApiResponse): NormalizedFlightSummary {
     const position = this.normalizePosition(entry);
-    const origin = this.normalizeAirport(entry.origin, entry.origin_iata, entry.origin_icao);
-    const destination = this.normalizeAirport(entry.destination, entry.destination_iata, entry.destination_icao);
+    
+    // Handle both object origin/destination (flight details) and string codes (position updates)
+    const originData = typeof entry.origin === 'object' ? entry.origin : undefined;
+    const destData = typeof entry.destination === 'object' ? entry.destination : undefined;
+    
+    const origin = this.normalizeAirport(
+      originData, 
+      entry.origin_iata ?? (typeof entry.origin === 'string' ? entry.origin : undefined), 
+      entry.origin_icao
+    );
+    const destination = this.normalizeAirport(
+      destData, 
+      entry.destination_iata ?? (typeof entry.destination === 'string' ? entry.destination : undefined), 
+      entry.destination_icao
+    );
     const operator = this.normalizeOperator(entry);
 
     return {
       id: entry.fa_flight_id ?? entry.flight_id ?? entry.ident ?? entry.ident_icao ?? entry.ident_iata,
+      faFlightId: entry.fa_flight_id,
       callsign: entry.ident ?? entry.callsign ?? entry.ident_icao ?? entry.ident_iata,
       flightNumber: entry.ident_iata ?? entry.ident,
       operator,
@@ -314,7 +328,7 @@ export class FlightawareService {
       destination,
       position,
       status: entry.status ?? entry.flight_status,
-      lastUpdatedUtc: entry.last_position_time ?? entry.timestamp ?? entry.clock ?? entry.updated_at,
+      lastUpdatedUtc: entry.last_position?.timestamp ?? entry.last_position_time ?? entry.timestamp ?? entry.clock ?? entry.updated_at,
     };
   }
 
@@ -387,11 +401,15 @@ export class FlightawareService {
       return undefined;
     }
 
+    // Handle AeroAPI structure: code_iata, code_icao, code
+    const iata = entry?.code_iata ?? entry?.iata ?? iataCode;
+    const icao = entry?.code_icao ?? entry?.icao ?? icaoCode;
+
     return {
-      code: entry?.code ?? iataCode ?? icaoCode,
+      code: entry?.code ?? iata ?? icao,
       name: entry?.name ?? entry?.airport,
-      iata: entry?.iata ?? iataCode,
-      icao: entry?.icao ?? icaoCode,
+      iata,
+      icao,
       city: entry?.city,
       country: entry?.country,
       countryCode: entry?.country_code,
@@ -402,8 +420,11 @@ export class FlightawareService {
   }
 
   private normalizePosition(entry: AeroApiResponse): NormalizedPosition | undefined {
-    const latitude = entry.latitude ?? entry.lat ?? entry.position?.latitude;
-    const longitude = entry.longitude ?? entry.lon ?? entry.position?.longitude;
+    // Handle both direct position fields and nested last_position object (AeroAPI flight details)
+    const positionSource = entry.last_position ?? entry;
+    
+    const latitude = positionSource.latitude ?? positionSource.lat ?? entry.position?.latitude;
+    const longitude = positionSource.longitude ?? positionSource.lon ?? entry.position?.longitude;
     if (latitude === undefined || longitude === undefined) {
       return undefined;
     }
@@ -411,11 +432,11 @@ export class FlightawareService {
     return {
       latitude,
       longitude,
-      altitude: entry.altitude ?? entry.alt,
-      groundSpeed: entry.groundspeed ?? entry.gs,
-      heading: entry.heading ?? entry.track ?? entry.true_heading,
-      isOnGround: entry.on_ground ?? entry.ground ?? false,
-      timestamp: entry.last_position_time ?? entry.timestamp ?? entry.clock,
+      altitude: positionSource.altitude ?? positionSource.alt ?? entry.altitude,
+      groundSpeed: positionSource.groundspeed ?? positionSource.gs ?? entry.groundspeed,
+      heading: positionSource.heading ?? positionSource.track ?? positionSource.true_heading ?? entry.heading,
+      isOnGround: positionSource.on_ground ?? entry.on_ground ?? entry.ground ?? false,
+      timestamp: positionSource.timestamp ?? entry.last_position_time ?? entry.timestamp ?? entry.clock,
     };
   }
 
