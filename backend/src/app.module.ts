@@ -1,8 +1,10 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { redisStore } from 'cache-manager-ioredis-yet';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
@@ -22,6 +24,7 @@ import { FeedsModule } from './feeds/feeds.module';
 import { WeatherModule } from './weather/weather.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
+import { FlightawareModule } from './flightaware/flightaware.module';
 
 @Module({
   controllers: [AppController],
@@ -29,6 +32,23 @@ import { AppController } from './app.controller';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('REDIS_URL');
+        if (redisUrl) {
+          return {
+            store: await redisStore({
+              url: redisUrl,
+            }),
+            ttl: 0,
+          };
+        }
+        return { ttl: 0 };
+      },
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -68,6 +88,7 @@ import { AppController } from './app.controller';
     LocationListsModule,
     FeedsModule,
     WeatherModule,
+    FlightawareModule,
   ],
   providers: [
     {

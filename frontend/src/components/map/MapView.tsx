@@ -4,10 +4,20 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { useMapStore } from '@/stores/mapStore';
 import { useLocationStore } from '@/stores/locationStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useLiveFlightStore } from '@/stores/liveFlightStore';
+import { liveFlightsService } from '@/services/api/liveFlights.service';
+import { LiveFlightControls, LiveFlightDetailsPanel } from '@/components/flights';
+import { LiveFlightSummary } from '@/types/liveFlights';
 import { Coordinates } from '@shared/types/geocoding';
 import { MapLayer } from '@shared/types/map';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+const LIVE_FLIGHTS_SOURCE_ID = 'live-flights';
+const LIVE_FLIGHTS_CLUSTER_LAYER_ID = 'live-flights-clusters';
+const LIVE_FLIGHTS_CLUSTER_COUNT_LAYER_ID = 'live-flights-cluster-count';
+const LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID = 'live-flights-unclustered';
+const LIVE_FLIGHTS_POLL_INTERVAL_MS = 15000;
+const LIVE_FLIGHTS_RENDER_INTERVAL_MS = 120;
 
 interface MapViewProps {
   onMapClick?: (coordinates: Coordinates) => void;
@@ -39,6 +49,35 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
   const { currentLocation, accuracy, isTracking } = useLocationStore();
   const { darkMode } = useUIStore();
+  const {
+    enabled: liveFlightsEnabled,
+    filters: liveFlightFilters,
+    flights: liveFlights,
+    selectedFlight,
+    detailsLoading,
+    detailsError,
+    setFlights,
+    setLoading: setLiveFlightsLoading,
+    setError: setLiveFlightsError,
+    selectFlightId,
+    setSelectedFlight,
+    setDetailsLoading,
+    setDetailsError,
+    clearSelection,
+    clearFlights,
+  } = useLiveFlightStore();
+
+  const liveFlightDataRef = useRef<{
+    previous: Map<string, LiveFlightSummary>;
+    current: Map<string, LiveFlightSummary>;
+    lastUpdateAt: number;
+  }>({
+    previous: new Map(),
+    current: new Map(),
+    lastUpdateAt: 0,
+  });
+  const liveFlightAnimationRef = useRef<number | null>(null);
+  const liveFlightRenderRef = useRef<number>(0);
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -75,6 +114,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
       // Setup POI click handling
       setupPoiClickHandler();
+      ensureLiveFlightsLayers();
     });
 
     map.current.on('move', () => {
@@ -214,6 +254,170 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     return map[maki] || 'attraction';
   };
 
+  const getLiveFlightsBbox = (): string | undefined => {
+    if (!map.current) return undefined;
+    const bounds = map.current.getBounds();
+    if (!bounds) return undefined;
+    const southWest = bounds.getSouthWest();
+    const northEast = bounds.getNorthEast();
+    return `${southWest.lat},${southWest.lng},${northEast.lat},${northEast.lng}`;
+  };
+
+  const addPlaneIcon = () => {
+    if (!map.current || map.current.hasImage('plane-icon')) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(16, 2);
+    ctx.lineTo(28, 28);
+    ctx.lineTo(16, 22);
+    ctx.lineTo(4, 28);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    map.current.addImage('plane-icon', imageData);
+  };
+
+  const ensureLiveFlightsLayers = () => {
+    if (!map.current) return;
+
+    addPlaneIcon();
+
+    if (!map.current.getSource(LIVE_FLIGHTS_SOURCE_ID)) {
+      map.current.addSource(LIVE_FLIGHTS_SOURCE_ID, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+        cluster: true,
+        clusterMaxZoom: 7,
+        clusterRadius: 55,
+      });
+    }
+
+    if (!map.current.getLayer(LIVE_FLIGHTS_CLUSTER_LAYER_ID)) {
+      map.current.addLayer({
+        id: LIVE_FLIGHTS_CLUSTER_LAYER_ID,
+        type: 'circle',
+        source: LIVE_FLIGHTS_SOURCE_ID,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#38bdf8',
+            50,
+            '#0ea5e9',
+            200,
+            '#0284c7',
+          ],
+          'circle-radius': ['step', ['get', 'point_count'], 18, 50, 24, 200, 30],
+          'circle-opacity': 0.85,
+        },
+      });
+    }
+
+    if (!map.current.getLayer(LIVE_FLIGHTS_CLUSTER_COUNT_LAYER_ID)) {
+      map.current.addLayer({
+        id: LIVE_FLIGHTS_CLUSTER_COUNT_LAYER_ID,
+        type: 'symbol',
+        source: LIVE_FLIGHTS_SOURCE_ID,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-size': 12,
+        },
+        paint: {
+          'text-color': '#0f172a',
+        },
+      });
+    }
+
+    if (!map.current.getLayer(LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID)) {
+      map.current.addLayer({
+        id: LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID,
+        type: 'symbol',
+        source: LIVE_FLIGHTS_SOURCE_ID,
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'icon-image': 'plane-icon',
+          'icon-size': 0.7,
+          'icon-rotate': ['coalesce', ['get', 'heading'], 0],
+          'icon-allow-overlap': true,
+          'text-field': ['coalesce', ['get', 'callsign'], ''],
+          'text-size': 10,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#0f172a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1,
+        },
+      });
+    }
+  };
+
+  const updateLiveFlightsSource = (features: GeoJSON.Feature[]) => {
+    if (!map.current) return;
+    const source = map.current.getSource(LIVE_FLIGHTS_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (!source || !source.setData) return;
+    source.setData({
+      type: 'FeatureCollection',
+      features,
+    });
+  };
+
+  const buildLiveFlightFeatures = (timestamp: number): GeoJSON.Feature[] => {
+    const { previous, current, lastUpdateAt } = liveFlightDataRef.current;
+    if (current.size === 0) return [];
+
+    const progress = lastUpdateAt
+      ? Math.min(1, Math.max(0, (timestamp - lastUpdateAt) / LIVE_FLIGHTS_POLL_INTERVAL_MS))
+      : 1;
+
+    const features: GeoJSON.Feature[] = [];
+    current.forEach((flight, id) => {
+      if (!flight.position) return;
+      const previousFlight = previous.get(id);
+      const currentPosition = flight.position;
+      const previousPosition = previousFlight?.position;
+
+      const latitude = previousPosition
+        ? previousPosition.latitude + (currentPosition.latitude - previousPosition.latitude) * progress
+        : currentPosition.latitude;
+      const longitude = previousPosition
+        ? previousPosition.longitude + (currentPosition.longitude - previousPosition.longitude) * progress
+        : currentPosition.longitude;
+
+      features.push({
+        type: 'Feature',
+        properties: {
+          id: flight.id,
+          callsign: flight.callsign ?? flight.flightNumber ?? '',
+          heading: flight.position.heading ?? 0,
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
+        },
+      });
+    });
+
+    return features;
+  };
+
   const setupPoiClickHandler = () => {
     if (!map.current) return;
 
@@ -249,6 +453,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
           addTrafficLayer();
         }
         setupPoiClickHandler();
+        ensureLiveFlightsLayers();
       });
     }
   }, [layer, darkMode, isLoaded]);
@@ -263,6 +468,164 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
       }
     }
   }, [trafficEnabled, isLoaded]);
+
+  useEffect(() => {
+    if (!liveFlightsEnabled) {
+      clearFlights();
+      clearSelection();
+      updateLiveFlightsSource([]);
+    }
+  }, [liveFlightsEnabled, clearFlights, clearSelection]);
+
+  useEffect(() => {
+    if (!liveFlightsEnabled) return;
+    if (!map.current || !isLoaded) return;
+
+    let isMounted = true;
+
+    const fetchLiveFlights = async () => {
+      setLiveFlightsLoading(true);
+      setLiveFlightsError(null);
+
+      try {
+        const bbox = getLiveFlightsBbox();
+        const response = await liveFlightsService.getLiveFlights({
+          bbox,
+          max: 250,
+          ...liveFlightFilters,
+        });
+        if (!isMounted) return;
+        setFlights(response.flights, response.updatedAt, response.stale);
+      } catch (error: any) {
+        if (!isMounted) return;
+        setLiveFlightsError(
+          error?.response?.data?.message || error?.message || 'Failed to load live flights',
+        );
+      }
+    };
+
+    fetchLiveFlights();
+    const interval = window.setInterval(fetchLiveFlights, LIVE_FLIGHTS_POLL_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+    };
+  }, [liveFlightsEnabled, isLoaded, liveFlightFilters, setFlights, setLiveFlightsLoading, setLiveFlightsError]);
+
+  useEffect(() => {
+    if (!liveFlightsEnabled) return;
+    const now = Date.now();
+    const currentMap = new Map(liveFlights.map((flight) => [flight.id, flight]));
+    const previousMap = liveFlightDataRef.current.current;
+    liveFlightDataRef.current = {
+      previous: previousMap,
+      current: currentMap,
+      lastUpdateAt: now,
+    };
+  }, [liveFlights, liveFlightsEnabled]);
+
+  useEffect(() => {
+    if (!map.current || !isLoaded) return;
+    ensureLiveFlightsLayers();
+
+    const handleClusterClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const features = map.current!.queryRenderedFeatures(e.point, {
+        layers: [LIVE_FLIGHTS_CLUSTER_LAYER_ID],
+      });
+      const clusterId = features[0]?.properties?.cluster_id;
+      const source = map.current!.getSource(LIVE_FLIGHTS_SOURCE_ID) as mapboxgl.GeoJSONSource;
+      if (clusterId !== undefined && source.getClusterExpansionZoom) {
+        source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err || zoom === null || zoom === undefined) return;
+          map.current!.easeTo({
+            center: (e.lngLat as any) as [number, number],
+            zoom: zoom,
+          });
+        });
+      }
+    };
+
+    const handleFlightClick = async (e: mapboxgl.MapLayerMouseEvent) => {
+      const features = map.current!.queryRenderedFeatures(e.point, {
+        layers: [LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID],
+      });
+      if (features.length === 0) return;
+      const feature = features[0];
+      const flightId = feature.properties?.id;
+      if (!flightId) return;
+      selectFlightId(flightId);
+      setDetailsLoading(true);
+      setDetailsError(null);
+      const summary = liveFlights.find((flight) => flight.id === flightId);
+      if (summary) {
+        setSelectedFlight(summary as any);
+      }
+
+      try {
+        const response = await liveFlightsService.getFlightDetails(flightId);
+        setSelectedFlight(response.flight);
+        setDetailsLoading(false);
+      } catch (error: any) {
+        setDetailsError(
+          error?.response?.data?.message || error?.message || 'Failed to load flight details',
+        );
+      }
+    };
+
+    const handlePointerEnter = () => {
+      map.current!.getCanvas().style.cursor = 'pointer';
+    };
+    const handlePointerLeave = () => {
+      map.current!.getCanvas().style.cursor = '';
+    };
+
+    map.current.on('click', LIVE_FLIGHTS_CLUSTER_LAYER_ID, handleClusterClick);
+    map.current.on('click', LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID, handleFlightClick);
+    map.current.on('mouseenter', LIVE_FLIGHTS_CLUSTER_LAYER_ID, handlePointerEnter);
+    map.current.on('mouseleave', LIVE_FLIGHTS_CLUSTER_LAYER_ID, handlePointerLeave);
+    map.current.on('mouseenter', LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID, handlePointerEnter);
+    map.current.on('mouseleave', LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID, handlePointerLeave);
+
+    const animate = (timestamp: number) => {
+      if (!map.current) return;
+      if (!liveFlightsEnabled) {
+        updateLiveFlightsSource([]);
+        return;
+      }
+
+      if (timestamp - liveFlightRenderRef.current > LIVE_FLIGHTS_RENDER_INTERVAL_MS) {
+        const features = buildLiveFlightFeatures(Date.now());
+        updateLiveFlightsSource(features);
+        liveFlightRenderRef.current = timestamp;
+      }
+      liveFlightAnimationRef.current = requestAnimationFrame(animate);
+    };
+
+    liveFlightAnimationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (!map.current) return;
+      map.current.off('click', LIVE_FLIGHTS_CLUSTER_LAYER_ID, handleClusterClick);
+      map.current.off('click', LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID, handleFlightClick);
+      map.current.off('mouseenter', LIVE_FLIGHTS_CLUSTER_LAYER_ID, handlePointerEnter);
+      map.current.off('mouseleave', LIVE_FLIGHTS_CLUSTER_LAYER_ID, handlePointerLeave);
+      map.current.off('mouseenter', LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID, handlePointerEnter);
+      map.current.off('mouseleave', LIVE_FLIGHTS_UNCLUSTERED_LAYER_ID, handlePointerLeave);
+      if (liveFlightAnimationRef.current) {
+        cancelAnimationFrame(liveFlightAnimationRef.current);
+        liveFlightAnimationRef.current = null;
+      }
+    };
+  }, [
+    isLoaded,
+    liveFlightsEnabled,
+    liveFlights,
+    selectFlightId,
+    setDetailsLoading,
+    setDetailsError,
+    setSelectedFlight,
+  ]);
 
   // Update center when store changes (but not from map move events)
   useEffect(() => {
@@ -896,6 +1259,13 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     <div className="relative w-full h-full">
       <div ref={mapContainer} className="w-full h-full" />
       {children}
+      <LiveFlightControls />
+      <LiveFlightDetailsPanel
+        flight={selectedFlight}
+        isLoading={detailsLoading}
+        error={detailsError}
+        onClose={clearSelection}
+      />
       <style>{`
         @keyframes pulse {
           0% {
