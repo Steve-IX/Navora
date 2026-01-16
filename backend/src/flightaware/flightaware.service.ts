@@ -220,13 +220,31 @@ export class FlightawareService {
     headers: Record<string, string> = {},
   ): Promise<T> {
     const url = `${baseUrl}${path}`;
-    const response = await firstValueFrom(
-      this.httpService.get<T>(url, {
-        params,
-        headers,
-      }),
-    );
-    return response.data;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<T>(url, {
+          params,
+          headers,
+        }),
+      );
+      return response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      if (status) {
+        this.logger.warn(
+          `Upstream request failed (${status}) ${url}: ${this.safeStringify(data)}`,
+        );
+        throw new HttpException(
+          {
+            message: data?.message ?? data?.error ?? 'Upstream request failed',
+            upstreamStatus: status,
+          },
+          status,
+        );
+      }
+      throw error;
+    }
   }
 
   private aeroApiBaseUrl(): string {
@@ -461,5 +479,13 @@ export class FlightawareService {
       return error.message;
     }
     return String(error);
+  }
+
+  private safeStringify(data: unknown): string {
+    try {
+      return JSON.stringify(data);
+    } catch {
+      return String(data);
+    }
   }
 }
