@@ -30,7 +30,6 @@ export interface LiveFlightPosition {
 
 export interface LiveFlightSummary {
   id: string;
-  faFlightId?: string;
   callsign?: string;
   flightNumber?: string;
   operator?: LiveFlightOperator;
@@ -77,12 +76,12 @@ export interface LiveFlightsResponse {
   updatedAt: string;
   flights: LiveFlightSummary[];
   stale: boolean;
-  source: 'aeroapi' | 'cache';
+  source: 'aviationstack' | 'cache';
 }
 
 export interface FlightDetailsResponse {
   flight: LiveFlightDetails | null;
   updatedAt: string;
   stale: boolean;
-  source: 'aeroapi' | 'cache';
+  source: 'aviationstack' | 'cache';
 }

@@ -145,18 +145,14 @@ export const LiveFlightDetailsPanel: React.FC<LiveFlightDetailsPanelProps> = ({
     return codes.join(' / ') || 'Unknown';
   };
 
-  // FlightAware URL using callsign
-  const getFlightAwareIdent = (): string | null => {
+  // FlightAware URL using callsign or flight number
+  const getFlightIdent = (): string | null => {
     if (flight?.callsign) return flight.callsign;
     if (flight?.flightNumber) return flight.flightNumber;
-    if (flight?.faFlightId) {
-      const parts = flight.faFlightId.split('-');
-      if (parts.length > 0 && parts[0]) return parts[0];
-    }
     return null;
   };
 
-  const flightIdent = getFlightAwareIdent();
+  const flightIdent = getFlightIdent();
   const flightAwareUrl = flightIdent
     ? `https://www.flightaware.com/live/flight/${flightIdent}`
     : null;

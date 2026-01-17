@@ -16,23 +16,37 @@ import {
 } from './types';
 
 // Cache TTLs in milliseconds (cache-manager v5+ uses ms)
-const LIVE_CACHE_TTL_MS = 60 * 1000; // 60 seconds - reduce API calls
+const LIVE_CACHE_TTL_MS = 60 * 1000; // 60 seconds - respect API rate limits
 const DETAILS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes for flight details
-const RATE_LIMIT_CACHE_TTL_MS = 30 * 1000; // Cache rate limit errors for 30s
+const RATE_LIMIT_CACHE_TTL_MS = 60 * 1000; // Cache rate limit errors for 60s (AviationStack has stricter limits)
 
-type AeroApiResponse = Record<string, any>;
+type AviationStackResponse = Record<string, any>;
 
 @Injectable()
 export class FlightawareService {
   private readonly logger = new Logger(FlightawareService.name);
+  private readonly aviationStackApiKey: string;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
-  ) {}
+  ) {
+    this.aviationStackApiKey = 
+      this.configService.get<string>('AVIATIONSTACK_KEY') ||
+      this.configService.get<string>('AVIATIONSTACK_API_KEY') ||
+      '';
+    
+    if (!this.aviationStackApiKey) {
+      this.logger.warn('AVIATIONSTACK_KEY not configured - flight tracking disabled');
+    }
+  }
 
   async getLiveFlights(query: LiveFlightsQuery): Promise<LiveFlightsResponse> {
+    if (!this.aviationStackApiKey) {
+      throw new HttpException('Flight tracking API not configured', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
     const cacheKey = this.buildLiveCacheKey(query);
     const cached = await this.cacheManager.get<LiveFlightsResponse>(cacheKey);
 
@@ -48,7 +62,7 @@ export class FlightawareService {
     }
 
     try {
-      const response = await this.fetchLiveFlightsFromAeroApi(query);
+      const response = await this.fetchLiveFlightsFromAviationStack(query);
       await this.cacheManager.set(cacheKey, response, LIVE_CACHE_TTL_MS);
       return response;
     } catch (error: any) {
@@ -68,6 +82,10 @@ export class FlightawareService {
   }
 
   async getFlightDetails(flightId: string): Promise<FlightDetailsResponse> {
+    if (!this.aviationStackApiKey) {
+      throw new HttpException('Flight tracking API not configured', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
     const cacheKey = `flights:details:${flightId}`;
     const cached = await this.cacheManager.get<FlightDetailsResponse>(cacheKey);
 
@@ -83,7 +101,7 @@ export class FlightawareService {
     }
 
     try {
-      const response = await this.fetchFlightDetailsFromAeroApi(flightId);
+      const response = await this.fetchFlightDetailsFromAviationStack(flightId);
       await this.cacheManager.set(cacheKey, response, DETAILS_CACHE_TTL_MS);
       return response;
     } catch (error: any) {
@@ -102,39 +120,39 @@ export class FlightawareService {
     }
   }
 
-  private async fetchLiveFlightsFromAeroApi(
+  private async fetchLiveFlightsFromAviationStack(
     query: LiveFlightsQuery,
   ): Promise<LiveFlightsResponse> {
     const { bbox, region, max } = query;
     const bounds = this.resolveBounds(region, bbox);
-    const queryString = this.buildAeroApiQuery(query, bounds);
-    const maxPages = Math.max(1, Math.min(3, Math.ceil((max ?? 200) / 15)));
 
-    this.logger.log(`AeroAPI query: ${queryString}`);
+    // Build AviationStack query params
+    const params: Record<string, any> = {
+      access_key: this.aviationStackApiKey,
+      flight_status: 'active', // Only get active (in-flight) aircraft
+      limit: 100, // Max allowed by most plans
+    };
 
-    let response: AeroApiResponse;
-    try {
-      // Try search/positions first (uses query syntax)
-      response = await this.aeroApiGet<AeroApiResponse>('/flights/search/positions', {
-        query: queryString,
-        max_pages: maxPages,
-      });
-    } catch (searchPositionsError: any) {
-      // If search/positions fails, fall back to /flights/search with simpler params
-      this.logger.warn(
-        `search/positions failed, trying /flights/search fallback`,
-      );
-      response = await this.aeroApiGet<AeroApiResponse>('/flights/search', {
-        type: 'Airline',
-        max_pages: maxPages,
-      });
+    // Add optional filters
+    if (query.airline) {
+      // Try to use airline filter if it looks like an IATA/ICAO code
+      if (query.airline.length === 2) {
+        params.airline_iata = query.airline.toUpperCase();
+      } else if (query.airline.length === 3) {
+        params.airline_icao = query.airline.toUpperCase();
+      }
     }
 
-    const entries = this.extractPositions(response);
+    this.logger.log(`AviationStack query: flight_status=active, limit=100`);
+
+    const response = await this.aviationStackGet<AviationStackResponse>('/flights', params);
+
+    const entries = response?.data ?? [];
     const flights = entries
-      .map((entry) => this.normalizeLiveFlight(entry))
-      .filter((flight) => this.applyPostFilters(flight, query))
-      .filter((flight) => this.filterByBounds(flight, bounds))
+      .map((entry: any) => this.normalizeLiveFlight(entry))
+      .filter((flight: NormalizedFlightSummary) => flight.position !== undefined) // Must have position
+      .filter((flight: NormalizedFlightSummary) => this.applyPostFilters(flight, query))
+      .filter((flight: NormalizedFlightSummary) => this.filterByBounds(flight, bounds))
       .slice(0, max ?? 200);
 
     return {
@@ -142,7 +160,7 @@ export class FlightawareService {
       updatedAt: new Date().toISOString(),
       flights,
       stale: false,
-      source: 'aeroapi',
+      source: 'aviationstack',
     };
   }
 
@@ -160,129 +178,58 @@ export class FlightawareService {
     );
   }
 
-  private async fetchFlightDetailsFromAeroApi(
+  private async fetchFlightDetailsFromAviationStack(
     flightId: string,
   ): Promise<FlightDetailsResponse> {
-    const response = await this.aeroApiGet<AeroApiResponse>(`/flights/${encodeURIComponent(flightId)}`, {});
-    const flightEntry = this.extractDetails(response);
-    const normalized = flightEntry ? this.normalizeFlightDetails(flightEntry) : null;
+    // flightId could be flight_iata (e.g., "AA123") or flight_icao (e.g., "AAL123")
+    const params: Record<string, any> = {
+      access_key: this.aviationStackApiKey,
+      limit: 1,
+    };
 
-    const enriched = normalized
-      ? await this.enrichDetailsWithFallback(normalized)
-      : normalized;
+    // Determine if it's IATA or ICAO format
+    if (flightId.length <= 6 && /^[A-Z]{2}\d+$/i.test(flightId)) {
+      params.flight_iata = flightId.toUpperCase();
+    } else {
+      params.flight_icao = flightId.toUpperCase();
+    }
+
+    const response = await this.aviationStackGet<AviationStackResponse>('/flights', params);
+    const entry = response?.data?.[0];
+    const normalized = entry ? this.normalizeFlightDetails(entry) : null;
 
     return {
-      flight: enriched,
+      flight: normalized,
       updatedAt: new Date().toISOString(),
       stale: false,
-      source: 'aeroapi',
+      source: 'aviationstack',
     };
   }
 
-  private async enrichDetailsWithFallback(
-    details: NormalizedFlightDetails,
-  ): Promise<NormalizedFlightDetails> {
-    const hasAirlineName = Boolean(details.operator?.name);
-    const hasAirportNames = Boolean(details.origin?.name && details.destination?.name);
-    const hasSchedule = Boolean(details.scheduled?.off || details.scheduled?.on);
-
-    if (hasAirlineName && hasAirportNames && hasSchedule) {
-      return details;
-    }
-
-    const aviationStackKey = this.configService.get<string>('AVIATIONSTACK_KEY');
-    if (!aviationStackKey) {
-      return details;
-    }
-
-    const flightNumber = details.flightNumber || details.callsign;
-    if (!flightNumber) {
-      return details;
-    }
-
-    try {
-      const response = await this.httpServiceGet<AeroApiResponse>(
-        this.aviationStackBaseUrl(),
-        '/flights',
-        {
-          access_key: aviationStackKey,
-          flight_iata: flightNumber,
-          limit: 1,
-        },
-      );
-      const entry = response?.data?.[0];
-      if (!entry) {
-        return details;
-      }
-
-      return {
-        ...details,
-        status: details.status ?? entry.flight_status ?? entry.status,
-        operator: {
-          ...details.operator,
-          name: details.operator?.name ?? entry.airline?.name,
-          iata: details.operator?.iata ?? entry.airline?.iata,
-          icao: details.operator?.icao ?? entry.airline?.icao,
-        },
-        origin: {
-          ...details.origin,
-          name: details.origin?.name ?? entry.departure?.airport,
-          iata: details.origin?.iata ?? entry.departure?.iata,
-          icao: details.origin?.icao ?? entry.departure?.icao,
-          timezone: details.origin?.timezone ?? entry.departure?.timezone,
-        },
-        destination: {
-          ...details.destination,
-          name: details.destination?.name ?? entry.arrival?.airport,
-          iata: details.destination?.iata ?? entry.arrival?.iata,
-          icao: details.destination?.icao ?? entry.arrival?.icao,
-          timezone: details.destination?.timezone ?? entry.arrival?.timezone,
-        },
-        scheduled: {
-          off: details.scheduled?.off ?? entry.departure?.scheduled,
-          on: details.scheduled?.on ?? entry.arrival?.scheduled,
-        },
-        estimated: {
-          off: details.estimated?.off ?? entry.departure?.estimated,
-          on: details.estimated?.on ?? entry.arrival?.estimated,
-        },
-        actual: {
-          off: details.actual?.off ?? entry.departure?.actual,
-          on: details.actual?.on ?? entry.arrival?.actual,
-        },
-      };
-    } catch (error) {
-      this.logger.warn(`AviationStack fallback failed: ${this.errorMessage(error)}`);
-      return details;
-    }
-  }
-
-  private async aeroApiGet<T>(path: string, params: Record<string, any>) {
-    const apiKey = this.configService.get<string>('AEROAPI_KEY');
-    if (!apiKey) {
-      throw new Error('AEROAPI_KEY is not configured');
-    }
-    return this.httpServiceGet<T>(this.aeroApiBaseUrl(), path, params, {
-      'x-apikey': apiKey,
-    });
-  }
-
-  private async httpServiceGet<T>(
-    baseUrl: string,
-    path: string,
-    params: Record<string, any>,
-    headers: Record<string, string> = {},
-  ): Promise<T> {
+  private async aviationStackGet<T>(path: string, params: Record<string, any>): Promise<T> {
+    const baseUrl = this.configService.get<string>('AVIATIONSTACK_BASE_URL') ?? 'http://api.aviationstack.com/v1';
     const url = `${baseUrl}${path}`;
+    
     try {
       const response = await firstValueFrom(
-        this.httpService.get<T>(url, {
-          params,
-          headers,
-        }),
+        this.httpService.get<T>(url, { params }),
       );
+      
+      // Check for API error in response body (AviationStack returns 200 with error object)
+      const data = response.data as any;
+      if (data?.error) {
+        this.logger.warn(`AviationStack API error: ${JSON.stringify(data.error)}`);
+        throw new HttpException(
+          data.error.info || 'AviationStack API error',
+          data.error.code === 'usage_limit_reached' ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_REQUEST,
+        );
+      }
+      
       return response.data;
     } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       const status = error?.response?.status;
       const data = error?.response?.data;
       if (status) {
@@ -301,183 +248,110 @@ export class FlightawareService {
     }
   }
 
-  private aeroApiBaseUrl(): string {
-    return this.configService.get<string>('AEROAPI_BASE_URL') ?? 'https://aeroapi.flightaware.com/aeroapi';
-  }
-
-  private aviationStackBaseUrl(): string {
-    return this.configService.get<string>('AVIATIONSTACK_BASE_URL') ?? 'http://api.aviationstack.com/v1';
-  }
-
-  private extractPositions(response: AeroApiResponse): AeroApiResponse[] {
-    return response?.positions ?? response?.flights ?? response?.data ?? [];
-  }
-
-  private extractDetails(response: AeroApiResponse): AeroApiResponse | null {
-    if (response?.flight) {
-      return response.flight;
-    }
-    if (Array.isArray(response?.flights) && response.flights.length > 0) {
-      return response.flights[0];
-    }
-    return response ?? null;
-  }
-
-  private normalizeLiveFlight(entry: AeroApiResponse): NormalizedFlightSummary {
+  private normalizeLiveFlight(entry: AviationStackResponse): NormalizedFlightSummary {
     const position = this.normalizePosition(entry);
-    
-    // Handle both object origin/destination (flight details) and string codes (position updates)
-    const originData = typeof entry.origin === 'object' ? entry.origin : undefined;
-    const destData = typeof entry.destination === 'object' ? entry.destination : undefined;
-    
-    const origin = this.normalizeAirport(
-      originData, 
-      entry.origin_iata ?? (typeof entry.origin === 'string' ? entry.origin : undefined), 
-      entry.origin_icao
-    );
-    const destination = this.normalizeAirport(
-      destData, 
-      entry.destination_iata ?? (typeof entry.destination === 'string' ? entry.destination : undefined), 
-      entry.destination_icao
-    );
+    const origin = this.normalizeAirport(entry.departure);
+    const destination = this.normalizeAirport(entry.arrival);
     const operator = this.normalizeOperator(entry);
 
+    // Generate a unique ID from flight codes
+    const id = entry.flight?.iata || entry.flight?.icao || entry.flight?.number || 
+               `${entry.airline?.iata || 'XX'}${entry.flight?.number || Math.random().toString(36).substr(2, 6)}`;
+
     return {
-      id: entry.fa_flight_id ?? entry.flight_id ?? entry.ident ?? entry.ident_icao ?? entry.ident_iata,
-      faFlightId: entry.fa_flight_id,
-      callsign: entry.ident ?? entry.callsign ?? entry.ident_icao ?? entry.ident_iata,
-      flightNumber: entry.ident_iata ?? entry.ident,
+      id,
+      callsign: entry.flight?.icao || entry.flight?.iata,
+      flightNumber: entry.flight?.iata || entry.flight?.icao,
       operator,
       origin,
       destination,
       position,
-      status: entry.status ?? entry.flight_status,
-      lastUpdatedUtc: entry.last_position?.timestamp ?? entry.last_position_time ?? entry.timestamp ?? entry.clock ?? entry.updated_at,
+      status: entry.flight_status,
+      lastUpdatedUtc: entry.live?.updated || new Date().toISOString(),
     };
   }
 
-  private normalizeFlightDetails(entry: AeroApiResponse): NormalizedFlightDetails {
+  private normalizeFlightDetails(entry: AviationStackResponse): NormalizedFlightDetails {
     const summary = this.normalizeLiveFlight(entry);
-    
-    // Extract gate info from origin/destination objects if available
-    const originGate = entry.origin?.gate ?? entry.gate_origin ?? entry.gate_departure ?? entry.gate;
-    const destGate = entry.destination?.gate ?? entry.gate_destination ?? entry.gate_arrival;
-    
-    // Extract terminal info
-    const originTerminal = entry.origin?.terminal ?? entry.terminal_origin ?? entry.terminal_departure ?? entry.terminal;
-    const destTerminal = entry.destination?.terminal ?? entry.terminal_destination ?? entry.terminal_arrival;
-    
+
     return {
       ...summary,
-      gate: (originGate || destGate) ? {
-        origin: originGate,
-        destination: destGate,
-      } : undefined,
-      terminal: (originTerminal || destTerminal) ? {
-        origin: originTerminal,
-        destination: destTerminal,
-      } : undefined,
+      gate: {
+        origin: entry.departure?.gate,
+        destination: entry.arrival?.gate,
+      },
+      terminal: {
+        origin: entry.departure?.terminal,
+        destination: entry.arrival?.terminal,
+      },
       scheduled: {
-        off: entry.scheduled_out ?? entry.scheduled_off ?? entry.departure_time?.scheduled,
-        on: entry.scheduled_in ?? entry.scheduled_on ?? entry.arrival_time?.scheduled,
+        off: entry.departure?.scheduled,
+        on: entry.arrival?.scheduled,
       },
       estimated: {
-        off: entry.estimated_out ?? entry.estimated_off ?? entry.departure_time?.estimated,
-        on: entry.estimated_in ?? entry.estimated_on ?? entry.arrival_time?.estimated,
+        off: entry.departure?.estimated,
+        on: entry.arrival?.estimated,
       },
       actual: {
-        off: entry.actual_out ?? entry.actual_off ?? entry.departure_time?.actual,
-        on: entry.actual_in ?? entry.actual_on ?? entry.arrival_time?.actual,
+        off: entry.departure?.actual,
+        on: entry.arrival?.actual,
       },
-      route: entry.route
+      aircraft: entry.aircraft
         ? {
-            description: entry.route,
-            coordinates: entry.route_coordinates?.map((coord: any) => ({
-              latitude: coord.lat ?? coord.latitude,
-              longitude: coord.lon ?? coord.longitude,
-            })),
-          }
-        : undefined,
-      aircraft: (entry.aircraft_type || entry.aircraft_registration || entry.aircraft)
-        ? {
-            registration: entry.aircraft_registration ?? entry.registration ?? entry.aircraft?.registration,
-            type: entry.aircraft_type ?? entry.aircraft?.type ?? entry.type,
+            registration: entry.aircraft.registration,
+            type: entry.aircraft.iata || entry.aircraft.icao,
           }
         : undefined,
     };
   }
 
-  private normalizeOperator(entry: AeroApiResponse): NormalizedOperator | undefined {
-    const operator = entry.operator ?? entry.operator_name ?? entry.airline?.name;
-    let icao = entry.operator_icao ?? entry.operator_icao_code ?? entry.airline?.icao;
-    const iata = entry.operator_iata ?? entry.operator_iata_code ?? entry.airline?.iata;
-    const callsign = entry.operator_callsign ?? entry.airline?.callsign;
-
-    // Extract ICAO from ident if not available (e.g., "BAW95" -> "BAW")
-    if (!icao && entry.ident) {
-      const match = entry.ident.match(/^([A-Z]{3})/);
-      if (match) {
-        icao = match[1];
-      }
-    }
-
-    if (!operator && !icao && !iata && !callsign) {
+  private normalizeOperator(entry: AviationStackResponse): NormalizedOperator | undefined {
+    const airline = entry.airline;
+    if (!airline) {
       return undefined;
     }
 
     return {
-      name: operator,
-      icao,
-      iata,
-      callsign,
+      name: airline.name,
+      icao: airline.icao,
+      iata: airline.iata,
+      callsign: airline.callsign,
     };
   }
 
-  private normalizeAirport(
-    entry?: AeroApiResponse,
-    iataCode?: string,
-    icaoCode?: string,
-  ): NormalizedAirport | undefined {
-    if (!entry && !iataCode && !icaoCode) {
+  private normalizeAirport(entry?: AviationStackResponse): NormalizedAirport | undefined {
+    if (!entry) {
       return undefined;
     }
 
-    // Handle AeroAPI structure: code_iata, code_icao, code
-    const iata = entry?.code_iata ?? entry?.iata ?? iataCode;
-    const icao = entry?.code_icao ?? entry?.icao ?? icaoCode;
-
     return {
-      code: entry?.code ?? iata ?? icao,
-      name: entry?.name ?? entry?.airport,
-      iata,
-      icao,
-      city: entry?.city,
-      country: entry?.country,
-      countryCode: entry?.country_code,
-      timezone: entry?.timezone,
-      latitude: entry?.latitude,
-      longitude: entry?.longitude,
+      code: entry.iata || entry.icao,
+      name: entry.airport,
+      iata: entry.iata,
+      icao: entry.icao,
+      city: undefined, // Not provided by AviationStack in this endpoint
+      country: undefined,
+      countryCode: undefined,
+      timezone: entry.timezone,
+      latitude: undefined,
+      longitude: undefined,
     };
   }
 
-  private normalizePosition(entry: AeroApiResponse): NormalizedPosition | undefined {
-    // Handle both direct position fields and nested last_position object (AeroAPI flight details)
-    const positionSource = entry.last_position ?? entry;
-    
-    const latitude = positionSource.latitude ?? positionSource.lat ?? entry.position?.latitude;
-    const longitude = positionSource.longitude ?? positionSource.lon ?? entry.position?.longitude;
-    if (latitude === undefined || longitude === undefined) {
+  private normalizePosition(entry: AviationStackResponse): NormalizedPosition | undefined {
+    const live = entry.live;
+    if (!live || live.latitude === null || live.longitude === null) {
       return undefined;
     }
 
     return {
-      latitude,
-      longitude,
-      altitude: positionSource.altitude ?? positionSource.alt ?? entry.altitude,
-      groundSpeed: positionSource.groundspeed ?? positionSource.gs ?? entry.groundspeed,
-      heading: positionSource.heading ?? positionSource.track ?? positionSource.true_heading ?? entry.heading,
-      isOnGround: positionSource.on_ground ?? entry.on_ground ?? entry.ground ?? false,
-      timestamp: positionSource.timestamp ?? entry.last_position_time ?? entry.timestamp ?? entry.clock,
+      latitude: live.latitude,
+      longitude: live.longitude,
+      altitude: live.altitude,
+      groundSpeed: live.speed_horizontal,
+      heading: live.direction,
+      isOnGround: live.is_ground ?? false,
+      timestamp: live.updated,
     };
   }
 
@@ -499,37 +373,36 @@ export class FlightawareService {
     return regionBounds[key] ?? regionBounds.GLOBAL;
   }
 
-  private buildAeroApiQuery(
-    query: LiveFlightsQuery,
-    bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number },
-  ): string {
-    // Build query without inAir filter first to test basic syntax
-    const parts: string[] = [
-      `{range lat ${bounds.minLat.toFixed(2)} ${bounds.maxLat.toFixed(2)}}`,
-      `{range lon ${bounds.minLon.toFixed(2)} ${bounds.maxLon.toFixed(2)}}`,
-    ];
-
-    if (query.minAltitude !== undefined) {
-      parts.push(`{>= alt ${query.minAltitude}}`);
-    }
-    if (query.maxAltitude !== undefined) {
-      parts.push(`{<= alt ${query.maxAltitude}}`);
-    }
-    if (query.minSpeed !== undefined) {
-      parts.push(`{>= gs ${query.minSpeed}}`);
-    }
-    if (query.maxSpeed !== undefined) {
-      parts.push(`{<= gs ${query.maxSpeed}}`);
-    }
-
-    return parts.join(' ');
-  }
-
   private applyPostFilters(flight: NormalizedFlightSummary, query: LiveFlightsQuery): boolean {
     if (!flight.position) {
       return false;
     }
 
+    // Altitude filters
+    if (query.minAltitude !== undefined && flight.position.altitude !== undefined) {
+      if (flight.position.altitude < query.minAltitude) {
+        return false;
+      }
+    }
+    if (query.maxAltitude !== undefined && flight.position.altitude !== undefined) {
+      if (flight.position.altitude > query.maxAltitude) {
+        return false;
+      }
+    }
+
+    // Speed filters
+    if (query.minSpeed !== undefined && flight.position.groundSpeed !== undefined) {
+      if (flight.position.groundSpeed < query.minSpeed) {
+        return false;
+      }
+    }
+    if (query.maxSpeed !== undefined && flight.position.groundSpeed !== undefined) {
+      if (flight.position.groundSpeed > query.maxSpeed) {
+        return false;
+      }
+    }
+
+    // Airline filter (if not already applied via API)
     if (query.airline) {
       const airlineFilter = query.airline.toLowerCase();
       const operatorMatch = flight.operator?.name?.toLowerCase().includes(airlineFilter);

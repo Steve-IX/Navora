@@ -42,7 +42,6 @@ export interface NormalizedPosition {
 
 export interface NormalizedFlightSummary {
   id: string;
-  faFlightId?: string;
   callsign?: string;
   flightNumber?: string;
   operator?: NormalizedOperator;
@@ -89,12 +88,12 @@ export interface LiveFlightsResponse {
   updatedAt: string;
   flights: NormalizedFlightSummary[];
   stale: boolean;
-  source: 'aeroapi' | 'cache';
+  source: 'aviationstack' | 'cache';
 }
 
 export interface FlightDetailsResponse {
   flight: NormalizedFlightDetails | null;
   updatedAt: string;
   stale: boolean;
-  source: 'aeroapi' | 'cache';
+  source: 'aviationstack' | 'cache';
 }
