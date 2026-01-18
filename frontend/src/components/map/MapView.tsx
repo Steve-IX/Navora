@@ -395,7 +395,11 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
   const updateLiveFlightsSource = (features: GeoJSON.Feature[]) => {
     if (!map.current) return;
     const source = map.current.getSource(LIVE_FLIGHTS_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
-    if (!source || !source.setData) return;
+    if (!source || !source.setData) {
+      console.warn('[LiveFlights] Source not available for update');
+      return;
+    }
+    console.log('[LiveFlights] Updating map source with', features.length, 'features');
     source.setData({
       type: 'FeatureCollection',
       features,
@@ -404,7 +408,10 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
   const buildLiveFlightFeatures = (timestamp: number): GeoJSON.Feature[] => {
     const { previous, current, lastUpdateAt } = liveFlightDataRef.current;
-    if (current.size === 0) return [];
+    if (current.size === 0) {
+      console.log('[LiveFlights] No flights in current map');
+      return [];
+    }
 
     const progress = lastUpdateAt
       ? Math.min(1, Math.max(0, (timestamp - lastUpdateAt) / LIVE_FLIGHTS_POLL_INTERVAL_MS))
@@ -412,7 +419,10 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
     const features: GeoJSON.Feature[] = [];
     current.forEach((flight, id) => {
-      if (!flight.position) return;
+      if (!flight.position) {
+        console.log('[LiveFlights] Flight', id, 'has no position');
+        return;
+      }
       const previousFlight = previous.get(id);
       const currentPosition = flight.position;
       const previousPosition = previousFlight?.position;
@@ -437,6 +447,14 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
         },
       });
     });
+
+    if (features.length > 0) {
+      console.log('[LiveFlights] Built', features.length, 'features:', features.map(f => {
+        const props = f.properties || {};
+        const geom = f.geometry as GeoJSON.Point;
+        return `${props.callsign || props.id}: (${geom.coordinates[1]?.toFixed(2)}, ${geom.coordinates[0]?.toFixed(2)})`;
+      }));
+    }
 
     return features;
   };
@@ -518,6 +536,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
           ...liveFlightFilters,
         });
         if (!isMounted) return;
+        console.log('[LiveFlights] Received flights:', response.flights.length, response.flights);
         setFlights(response.flights, response.updatedAt, response.stale);
       } catch (error: any) {
         if (!isMounted) return;
@@ -541,6 +560,7 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
     const now = Date.now();
     const currentMap = new Map(liveFlights.map((flight) => [flight.id, flight]));
     const previousMap = liveFlightDataRef.current.current;
+    console.log('[LiveFlights] Updating flight data ref:', currentMap.size, 'flights');
     liveFlightDataRef.current = {
       previous: previousMap,
       current: currentMap,
