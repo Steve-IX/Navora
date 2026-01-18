@@ -127,11 +127,15 @@ export class FlightawareService {
     const bounds = this.resolveBounds(region, bbox);
 
     // Build AviationStack query params
+    // Note: AviationStack free tier may have limited live position data
     const params: Record<string, any> = {
       access_key: this.aviationStackApiKey,
-      flight_status: 'active', // Only get active (in-flight) aircraft
+      flight_status: 'active', // Only get active (in-flight) aircraft with live data
       limit: 100, // Max allowed by most plans
     };
+    
+    // Log query params (without API key)
+    this.logger.debug(`AviationStack query params: ${JSON.stringify({ ...params, access_key: '[REDACTED]' })}`);
 
     // Add optional filters
     if (query.airline) {
@@ -148,12 +152,50 @@ export class FlightawareService {
     const response = await this.aviationStackGet<AviationStackResponse>('/flights', params);
 
     const entries = response?.data ?? [];
+    this.logger.log(`AviationStack returned ${entries.length} flight entries`);
+    
+    if (entries.length === 0) {
+      this.logger.warn('AviationStack returned no flight entries - API may be rate-limited or no active flights found');
+      return {
+        region: region ?? 'global',
+        updatedAt: new Date().toISOString(),
+        flights: [],
+        stale: false,
+        source: 'aviationstack',
+      };
+    }
+    
+    // Log sample entry structure for debugging (first entry only, limited fields)
+    if (entries.length > 0) {
+      const sample = entries[0];
+      this.logger.debug(`Sample entry: has live=${!!sample.live}, has airline=${!!sample.airline}, flight_status=${sample.flight_status}`);
+      if (sample.live) {
+        this.logger.debug(`Sample live data: lat=${sample.live.latitude}, lon=${sample.live.longitude}`);
+      }
+    }
+    
+    let flightsWithPosition = 0;
+    let flightsFiltered = 0;
+    
     const flights = entries
       .map((entry: any) => this.normalizeLiveFlight(entry))
-      .filter((flight: NormalizedFlightSummary) => flight.position !== undefined) // Must have position
+      .filter((flight: NormalizedFlightSummary) => {
+        if (!flight.position) {
+          flightsFiltered++;
+          return false;
+        }
+        flightsWithPosition++;
+        return true;
+      })
       .filter((flight: NormalizedFlightSummary) => this.applyPostFilters(flight, query))
       .filter((flight: NormalizedFlightSummary) => this.filterByBounds(flight, bounds))
       .slice(0, max ?? 200);
+    
+    this.logger.log(`Filtered: ${flightsWithPosition}/${entries.length} flights have position data, ${flights.length} after bounds/filters`);
+    
+    if (flightsWithPosition === 0 && entries.length > 0) {
+      this.logger.warn('AviationStack returned flights but none have live position data - check API plan includes live tracking');
+    }
 
     return {
       region: region ?? 'global',
@@ -207,7 +249,7 @@ export class FlightawareService {
   }
 
   private async aviationStackGet<T>(path: string, params: Record<string, any>): Promise<T> {
-    const baseUrl = this.configService.get<string>('AVIATIONSTACK_BASE_URL') ?? 'http://api.aviationstack.com/v1';
+    const baseUrl = this.configService.get<string>('AVIATIONSTACK_BASE_URL') ?? 'https://api.aviationstack.com/v1';
     const url = `${baseUrl}${path}`;
     
     try {
@@ -340,18 +382,40 @@ export class FlightawareService {
 
   private normalizePosition(entry: AviationStackResponse): NormalizedPosition | undefined {
     const live = entry.live;
-    if (!live || live.latitude === null || live.longitude === null) {
+    
+    // AviationStack may not provide live data for all flights
+    // Check if live object exists and has valid coordinates
+    if (!live) {
+      return undefined;
+    }
+    
+    // Handle null/undefined values more carefully
+    const latitude = live.latitude;
+    const longitude = live.longitude;
+    
+    // Must have valid lat/lon to create position
+    if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
+      return undefined;
+    }
+    
+    // Validate lat/lon are valid numbers
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return undefined;
+    }
+    
+    // Validate lat/lon are within valid ranges
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       return undefined;
     }
 
     return {
-      latitude: live.latitude,
-      longitude: live.longitude,
-      altitude: live.altitude,
-      groundSpeed: live.speed_horizontal,
-      heading: live.direction,
+      latitude,
+      longitude,
+      altitude: live.altitude !== null && live.altitude !== undefined ? live.altitude : undefined,
+      groundSpeed: live.speed_horizontal !== null && live.speed_horizontal !== undefined ? live.speed_horizontal : undefined,
+      heading: live.direction !== null && live.direction !== undefined ? live.direction : undefined,
       isOnGround: live.is_ground ?? false,
-      timestamp: live.updated,
+      timestamp: live.updated || new Date().toISOString(),
     };
   }
 
