@@ -197,7 +197,8 @@ export class FlightawareService {
     
     this.logger.debug(`Using bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]`);
     
-    const flights = flightsWithPos
+    // First, try to get flights within bounds
+    let flights = flightsWithPos
       .filter((flight: NormalizedFlightSummary) => {
         const passed = this.applyPostFilters(flight, query);
         if (!passed) flightsFilteredByPostFilters++;
@@ -216,15 +217,23 @@ export class FlightawareService {
       })
       .slice(0, max ?? 200);
     
+    // If no flights found within bounds but we have flights with position data,
+    // fall back to returning flights from anywhere (so users can see the feature works)
+    if (flights.length === 0 && flightsWithPos.length > 0) {
+      this.logger.warn(`No flights found within bounds. Falling back to global flights with position data. ` +
+        `Bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]`);
+      
+      // Return flights with position data from anywhere (limit to smaller number for fallback)
+      flights = flightsWithPos
+        .filter((flight: NormalizedFlightSummary) => this.applyPostFilters(flight, query))
+        .slice(0, Math.min(20, max ?? 20)); // Limit fallback to 20 flights to avoid overwhelming the map
+      
+      this.logger.log(`Returning ${flights.length} global flights with position data as fallback`);
+    }
+    
     this.logger.log(`Filtered: ${flightsWithPosition}/${entries.length} flights have position data, ` +
       `${flightsFilteredByPostFilters} filtered by post-filters, ${flightsFilteredByBounds} filtered by bounds, ` +
       `${flights.length} remaining`);
-    
-    if (flightsWithPosition > 0 && flights.length === 0) {
-      this.logger.warn(`All ${flightsWithPosition} flights with position data were filtered out. ` +
-        `Bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]. ` +
-        `Consider expanding search bounds or checking if flights are in different regions.`);
-    }
     
     if (flightsWithPosition === 0 && entries.length > 0) {
       this.logger.warn('AviationStack returned flights but none have live position data - check API plan includes live tracking');
