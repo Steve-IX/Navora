@@ -175,23 +175,56 @@ export class FlightawareService {
     }
     
     let flightsWithPosition = 0;
-    let flightsFiltered = 0;
+    let flightsFilteredByPostFilters = 0;
+    let flightsFilteredByBounds = 0;
     
-    const flights = entries
-      .map((entry: any) => this.normalizeLiveFlight(entry))
+    const normalizedFlights = entries.map((entry: any) => this.normalizeLiveFlight(entry));
+    const flightsWithPos = normalizedFlights.filter((flight: NormalizedFlightSummary) => {
+      if (!flight.position) {
+        return false;
+      }
+      flightsWithPosition++;
+      return true;
+    });
+    
+    // Log sample positions for debugging
+    if (flightsWithPos.length > 0) {
+      const sampleFlights = flightsWithPos.slice(0, 3);
+      this.logger.debug(`Sample flights with position: ${sampleFlights.map(f => 
+        `${f.callsign || f.id}: (${f.position?.latitude?.toFixed(2)}, ${f.position?.longitude?.toFixed(2)})`
+      ).join(', ')}`);
+    }
+    
+    this.logger.debug(`Using bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]`);
+    
+    const flights = flightsWithPos
       .filter((flight: NormalizedFlightSummary) => {
-        if (!flight.position) {
-          flightsFiltered++;
-          return false;
-        }
-        flightsWithPosition++;
-        return true;
+        const passed = this.applyPostFilters(flight, query);
+        if (!passed) flightsFilteredByPostFilters++;
+        return passed;
       })
-      .filter((flight: NormalizedFlightSummary) => this.applyPostFilters(flight, query))
-      .filter((flight: NormalizedFlightSummary) => this.filterByBounds(flight, bounds))
+      .filter((flight: NormalizedFlightSummary) => {
+        const passed = this.filterByBounds(flight, bounds);
+        if (!passed && flight.position) {
+          flightsFilteredByBounds++;
+          // Log first few filtered positions for debugging
+          if (flightsFilteredByBounds <= 3) {
+            this.logger.debug(`Flight ${flight.callsign || flight.id} filtered by bounds: (${flight.position.latitude.toFixed(2)}, ${flight.position.longitude.toFixed(2)}) outside bounds`);
+          }
+        }
+        return passed;
+      })
       .slice(0, max ?? 200);
     
-    this.logger.log(`Filtered: ${flightsWithPosition}/${entries.length} flights have position data, ${flights.length} after bounds/filters`);
+    this.logger.log(`Filtered: ${flightsWithPosition}/${entries.length} flights have position data, ` +
+      `${flightsFilteredByPostFilters} filtered by post-filters, ${flightsFilteredByBounds} filtered by bounds, ` +
+      `${flights.length} remaining`);
+    
+    if (flightsWithPosition > 0 && flights.length === 0) {
+      this.logger.warn(`All ${flightsWithPosition} flights with position data were filtered out. ` +
+        `Bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]. ` +
+        `Consider expanding search bounds or checking if flights are in different regions.`);
+    }
     
     if (flightsWithPosition === 0 && entries.length > 0) {
       this.logger.warn('AviationStack returned flights but none have live position data - check API plan includes live tracking');
@@ -212,11 +245,15 @@ export class FlightawareService {
   ): boolean {
     if (!flight.position) return false;
     const { latitude, longitude } = flight.position;
+    
+    // Add a small buffer (0.1 degrees ≈ 11km) to account for map viewport edge cases
+    const buffer = 0.1;
+    
     return (
-      latitude >= bounds.minLat &&
-      latitude <= bounds.maxLat &&
-      longitude >= bounds.minLon &&
-      longitude <= bounds.maxLon
+      latitude >= (bounds.minLat - buffer) &&
+      latitude <= (bounds.maxLat + buffer) &&
+      longitude >= (bounds.minLon - buffer) &&
+      longitude <= (bounds.maxLon + buffer)
     );
   }
 
