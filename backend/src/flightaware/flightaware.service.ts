@@ -218,17 +218,19 @@ export class FlightawareService {
       .slice(0, max ?? 200);
     
     // If no flights found within bounds but we have flights with position data,
-    // fall back to returning flights from anywhere (so users can see the feature works)
+    // fall back to returning ALL flights from anywhere (up to max limit)
+    // This allows users to track flights globally when local flights aren't available
     if (flights.length === 0 && flightsWithPos.length > 0) {
       this.logger.warn(`No flights found within bounds. Falling back to global flights with position data. ` +
         `Bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]`);
       
-      // Return flights with position data from anywhere (limit to smaller number for fallback)
+      // Return ALL flights with position data from anywhere (up to max limit)
+      // This ensures users can see live flights regardless of their viewing location
       flights = flightsWithPos
         .filter((flight: NormalizedFlightSummary) => this.applyPostFilters(flight, query))
-        .slice(0, Math.min(20, max ?? 20)); // Limit fallback to 20 flights to avoid overwhelming the map
+        .slice(0, max ?? 200); // Return up to max limit (typically 200-250)
       
-      this.logger.log(`Returning ${flights.length} global flights with position data as fallback`);
+      this.logger.log(`Returning ${flights.length} global flights with position data as fallback (max: ${max ?? 200})`);
     }
     
     this.logger.log(`Filtered: ${flightsWithPosition}/${entries.length} flights have position data, ` +
