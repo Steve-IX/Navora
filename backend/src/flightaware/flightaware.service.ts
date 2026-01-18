@@ -126,33 +126,116 @@ export class FlightawareService {
     const { bbox, region, max } = query;
     const bounds = this.resolveBounds(region, bbox);
 
-    // Build AviationStack query params
-    // Note: AviationStack free tier may have limited live position data
-    const params: Record<string, any> = {
-      access_key: this.aviationStackApiKey,
-      flight_status: 'active', // Only get active (in-flight) aircraft with live data
-      limit: 100, // Max allowed by most plans
-    };
+    // Try to fetch as many flights as possible
+    // Professional plans support up to 1000 per request
+    // Free/Basic plans support up to 100 per request
+    let entries: any[] = [];
+    let allEntries: any[] = [];
     
-    // Log query params (without API key)
-    this.logger.debug(`AviationStack query params: ${JSON.stringify({ ...params, access_key: '[REDACTED]' })}`);
+    // First, try requesting 1000 flights (for Professional plans)
+    const baseParams: Record<string, any> = {
+      access_key: this.aviationStackApiKey,
+      flight_status: 'active',
+    };
 
     // Add optional filters
     if (query.airline) {
-      // Try to use airline filter if it looks like an IATA/ICAO code
       if (query.airline.length === 2) {
-        params.airline_iata = query.airline.toUpperCase();
+        baseParams.airline_iata = query.airline.toUpperCase();
       } else if (query.airline.length === 3) {
-        params.airline_icao = query.airline.toUpperCase();
+        baseParams.airline_icao = query.airline.toUpperCase();
       }
     }
 
-    this.logger.log(`AviationStack query: flight_status=active, limit=100`);
+    try {
+      // Try 1000 flights first (Professional plan)
+      const params1000 = { ...baseParams, limit: 1000 };
+      this.logger.debug(`AviationStack query params: ${JSON.stringify({ ...params1000, access_key: '[REDACTED]' })}`);
+      this.logger.log(`AviationStack query: flight_status=active, limit=1000 (attempting Professional plan)`);
 
-    const response = await this.aviationStackGet<AviationStackResponse>('/flights', params);
+      const response1000 = await this.aviationStackGet<AviationStackResponse>('/flights', params1000);
+      allEntries = response1000?.data ?? [];
+      
+      // If we got less than 100, API likely capped us (free/basic plan)
+      // In that case, use pagination to get more
+      if (allEntries.length > 0 && allEntries.length < 100) {
+        // Got some results but hit a limit - use pagination
+        this.logger.log(`AviationStack returned ${allEntries.length} flights (likely hit limit). Using pagination to fetch more...`);
+        
+        // Fetch 3 more pages (total 4 pages = up to 400 flights for free/basic)
+        for (let page = 1; page <= 3; page++) {
+          const offset = allEntries.length * page;
+          const paramsPage = { ...baseParams, limit: 100, offset };
+          this.logger.debug(`Fetching page ${page + 1} with offset ${offset}`);
+          
+          try {
+            const responsePage = await this.aviationStackGet<AviationStackResponse>('/flights', paramsPage);
+            const pageEntries = responsePage?.data ?? [];
+            if (pageEntries.length > 0) {
+              allEntries.push(...pageEntries);
+              this.logger.log(`Page ${page + 1}: Added ${pageEntries.length} flights (total: ${allEntries.length})`);
+            } else {
+              break; // No more results
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch page ${page + 1}: ${error.message}`);
+            break; // Stop pagination on error
+          }
+        }
+      } else if (allEntries.length >= 100 && allEntries.length < 1000) {
+        // Got 100-999 flights, might be more available - try one more page
+        const paramsPage = { ...baseParams, limit: 100, offset: 100 };
+        try {
+          const responsePage = await this.aviationStackGet<AviationStackResponse>('/flights', paramsPage);
+          const pageEntries = responsePage?.data ?? [];
+          if (pageEntries.length > 0) {
+            allEntries.push(...pageEntries);
+            this.logger.log(`Page 2: Added ${pageEntries.length} flights (total: ${allEntries.length})`);
+          }
+        } catch (error) {
+          // Ignore - single page is fine
+        }
+      }
+    } catch (error) {
+      // If 1000 fails, fall back to 100 (free/basic plan)
+      this.logger.warn(`Request for 1000 flights failed, falling back to 100: ${error.message}`);
+      
+      const params100 = { ...baseParams, limit: 100 };
+      this.logger.debug(`AviationStack query params: ${JSON.stringify({ ...params100, access_key: '[REDACTED]' })}`);
+      this.logger.log(`AviationStack query: flight_status=active, limit=100`);
 
-    const entries = response?.data ?? [];
-    this.logger.log(`AviationStack returned ${entries.length} flight entries`);
+      const response100 = await this.aviationStackGet<AviationStackResponse>('/flights', params100);
+      allEntries = response100?.data ?? [];
+      
+      // For free/basic plans, try pagination to get more flights
+      if (allEntries.length === 100) {
+        this.logger.log(`Got exactly 100 flights (likely plan limit). Fetching additional pages...`);
+        
+        // Fetch 4 more pages (total 5 pages = up to 500 flights)
+        for (let page = 1; page <= 4; page++) {
+          const offset = 100 * page;
+          const paramsPage = { ...baseParams, limit: 100, offset };
+          this.logger.debug(`Fetching page ${page + 1} with offset ${offset}`);
+          
+          try {
+            const responsePage = await this.aviationStackGet<AviationStackResponse>('/flights', paramsPage);
+            const pageEntries = responsePage?.data ?? [];
+            if (pageEntries.length > 0) {
+              allEntries.push(...pageEntries);
+              this.logger.log(`Page ${page + 1}: Added ${pageEntries.length} flights (total: ${allEntries.length})`);
+            } else {
+              break; // No more results
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch page ${page + 1}: ${error.message}`);
+            break; // Stop pagination on error (may hit rate limit)
+          }
+        }
+      }
+    }
+
+    entries = allEntries;
+    this.logger.log(`AviationStack returned ${entries.length} total flight entries (aggregated from multiple pages)`);
     
     if (entries.length === 0) {
       this.logger.warn('AviationStack returned no flight entries - API may be rate-limited or no active flights found');
