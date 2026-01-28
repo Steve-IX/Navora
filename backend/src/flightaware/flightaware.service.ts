@@ -43,25 +43,35 @@ const SQUAWK = 14;
 @Injectable()
 export class FlightawareService {
   private readonly logger = new Logger(FlightawareService.name);
+  private readonly openSkyClientId: string;
+  private readonly openSkyClientSecret: string;
   private readonly openSkyUsername: string;
   private readonly openSkyPassword: string;
   private readonly openSkyBaseUrl = 'https://opensky-network.org/api';
-  private readonly hasCredentials: boolean;
+  private readonly openSkyAuthUrl = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
+  private readonly hasOAuthCredentials: boolean;
+  private readonly hasBasicAuthCredentials: boolean;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    // OpenSky uses basic auth (username/password), not OAuth2
+    // OpenSky supports OAuth2 (for new accounts) and Basic Auth (for legacy accounts)
+    this.openSkyClientId = this.configService.get<string>('OPENSKY_CLIENT_ID') || '';
+    this.openSkyClientSecret = this.configService.get<string>('OPENSKY_CLIENT_SECRET') || '';
     this.openSkyUsername = this.configService.get<string>('OPENSKY_USERNAME') || '';
     this.openSkyPassword = this.configService.get<string>('OPENSKY_PASSWORD') || '';
-    this.hasCredentials = !!(this.openSkyUsername && this.openSkyPassword);
+    
+    this.hasOAuthCredentials = !!(this.openSkyClientId && this.openSkyClientSecret);
+    this.hasBasicAuthCredentials = !!(this.openSkyUsername && this.openSkyPassword);
 
-    if (!this.hasCredentials) {
+    if (!this.hasOAuthCredentials && !this.hasBasicAuthCredentials) {
       this.logger.log('OpenSky credentials not configured - using unauthenticated API (rate limited)');
+    } else if (this.hasOAuthCredentials) {
+      this.logger.log('OpenSky API configured with OAuth2 authentication');
     } else {
-      this.logger.log('OpenSky API configured with authentication');
+      this.logger.log('OpenSky API configured with Basic Auth (legacy)');
     }
   }
 
@@ -135,16 +145,71 @@ export class FlightawareService {
     }
   }
 
-  private getAuthHeaders(): Record<string, string> {
-    if (!this.hasCredentials) {
-      return {};
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    // Try OAuth2 first (for new accounts)
+    if (this.hasOAuthCredentials) {
+      try {
+        const token = await this.getOAuthToken();
+        return {
+          Authorization: `Bearer ${token}`,
+        };
+      } catch (error) {
+        this.logger.warn('OAuth2 token fetch failed, falling back to Basic Auth or anonymous');
+      }
     }
 
-    // OpenSky uses HTTP Basic Authentication
-    const credentials = Buffer.from(`${this.openSkyUsername}:${this.openSkyPassword}`).toString('base64');
-    return {
-      Authorization: `Basic ${credentials}`,
-    };
+    // Fall back to Basic Auth (for legacy accounts)
+    if (this.hasBasicAuthCredentials) {
+      const credentials = Buffer.from(`${this.openSkyUsername}:${this.openSkyPassword}`).toString('base64');
+      return {
+        Authorization: `Basic ${credentials}`,
+      };
+    }
+
+    // No credentials - use anonymous mode
+    return {};
+  }
+
+  private async getOAuthToken(): Promise<string> {
+    const tokenCacheKey = 'opensky:oauth_token';
+    const cachedToken = await this.cacheManager.get<string>(tokenCacheKey);
+
+    if (cachedToken) {
+      return cachedToken;
+    }
+
+    try {
+      this.logger.debug('Fetching new OpenSky OAuth2 token...');
+
+      const response = await firstValueFrom(
+        this.httpService.post<{ access_token: string; expires_in: number }>(
+          this.openSkyAuthUrl,
+          new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: this.openSkyClientId,
+            client_secret: this.openSkyClientSecret,
+          }).toString(),
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+          },
+        ),
+      );
+
+      const token = response.data.access_token;
+      const expiresIn = response.data.expires_in || 1800; // Default 30 minutes
+
+      // Cache token for slightly less than its expiry time
+      const cacheTtl = Math.min((expiresIn - 60) * 1000, 29 * 60 * 1000); // Cache for 29 minutes max
+      await this.cacheManager.set(tokenCacheKey, token, cacheTtl);
+
+      this.logger.debug('OpenSky OAuth2 token obtained successfully');
+      return token;
+    } catch (error: any) {
+      this.logger.error(`Failed to obtain OpenSky OAuth2 token: ${this.errorMessage(error)}`);
+      throw error;
+    }
   }
 
   private async fetchLiveFlightsFromOpenSky(query: LiveFlightsQuery): Promise<LiveFlightsResponse> {
@@ -167,10 +232,11 @@ export class FlightawareService {
     );
 
     try {
+      const headers = await this.getAuthHeaders();
       const response = await firstValueFrom(
         this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
           params,
-          headers: this.getAuthHeaders(),
+          headers,
         }),
       );
 
@@ -181,9 +247,10 @@ export class FlightawareService {
         // If no flights in bounds, try fetching without bounds (global)
         if (Object.keys(params).length > 0) {
           this.logger.warn('No flights in bounds, fetching global flights...');
+          const globalHeaders = await this.getAuthHeaders();
           const globalResponse = await firstValueFrom(
             this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
-              headers: this.getAuthHeaders(),
+              headers: globalHeaders,
             }),
           );
           const globalStates = globalResponse.data.states || [];
@@ -230,25 +297,56 @@ export class FlightawareService {
         source: 'opensky',
       };
     } catch (error: any) {
-      // Handle rate limiting and auth errors gracefully
+      // Handle rate limiting
       if (error?.response?.status === 429) {
         this.logger.warn('OpenSky API rate limit exceeded');
         throw error;
       }
-      if (error?.response?.status === 401 || error?.response?.status === 403) {
-        this.logger.warn('OpenSky API authentication failed - check credentials');
-        throw error;
+      
+      // If auth failed and we have credentials, try anonymous mode as fallback
+      if ((error?.response?.status === 401 || error?.response?.status === 403) && 
+          (this.hasOAuthCredentials || this.hasBasicAuthCredentials)) {
+        this.logger.warn('OpenSky API authentication failed - retrying as anonymous user');
+        try {
+          // Retry without authentication
+          const response = await firstValueFrom(
+            this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
+              params,
+            }),
+          );
+          const states = response.data.states || [];
+          this.logger.log(`OpenSky returned ${states.length} aircraft state vectors (anonymous)`);
+          
+          const normalizedFlights = states
+            .map((state) => this.normalizeStateVector(state))
+            .filter((flight): flight is NormalizedFlightSummary => flight !== null)
+            .filter((flight) => this.applyPostFilters(flight, query))
+            .slice(0, max ?? 200);
+
+          return {
+            region: region ?? 'global',
+            updatedAt: new Date().toISOString(),
+            flights: normalizedFlights,
+            stale: false,
+            source: 'opensky',
+          };
+        } catch (retryError) {
+          this.logger.warn('OpenSky API request failed even as anonymous user');
+          throw retryError;
+        }
       }
+      
       throw error;
     }
   }
 
   private async fetchFlightDetailsFromOpenSky(flightId: string): Promise<FlightDetailsResponse> {
     // OpenSky uses ICAO24 addresses, so flightId should be the icao24 or callsign
+    // Build params outside try/catch so we can reuse them in the anonymous fallback
+    const params: Record<string, string> = {};
 
     try {
       // Try to find the aircraft by icao24 address
-      const params: Record<string, string> = {};
 
       // If it looks like a callsign (has letters and numbers), search differently
       // OpenSky doesn't support callsign filtering directly, so we fetch all and filter
@@ -257,10 +355,11 @@ export class FlightawareService {
         params.icao24 = flightId.toLowerCase();
       }
 
+      const headers = await this.getAuthHeaders();
       const response = await firstValueFrom(
         this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
           params: Object.keys(params).length > 0 ? params : undefined,
-          headers: this.getAuthHeaders(),
+          headers,
         }),
       );
 
@@ -316,15 +415,78 @@ export class FlightawareService {
         source: 'opensky',
       };
     } catch (error: any) {
-      // Handle rate limiting and auth errors gracefully
+      // Handle rate limiting
       if (error?.response?.status === 429) {
         this.logger.warn('OpenSky API rate limit exceeded');
         throw error;
       }
-      if (error?.response?.status === 401 || error?.response?.status === 403) {
-        this.logger.warn('OpenSky API authentication failed - check credentials');
-        throw error;
+      
+      // If auth failed and we have credentials, try anonymous mode as fallback
+      if ((error?.response?.status === 401 || error?.response?.status === 403) && 
+          (this.hasOAuthCredentials || this.hasBasicAuthCredentials)) {
+        this.logger.warn('OpenSky API authentication failed - retrying as anonymous user');
+        try {
+          // Retry without authentication
+          const response = await firstValueFrom(
+            this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
+              params: Object.keys(params).length > 0 ? params : undefined,
+            }),
+          );
+          const states = response.data.states || [];
+          
+          // Find the matching flight
+          let matchingState = states.find((state) => {
+            const icao24 = state[ICAO24];
+            const callsign = (state[CALLSIGN] || '').trim();
+            return (
+              icao24.toLowerCase() === flightId.toLowerCase() ||
+              callsign.toLowerCase() === flightId.toLowerCase()
+            );
+          });
+
+          if (!matchingState && states.length > 0) {
+            matchingState = states[0];
+          }
+
+          if (!matchingState) {
+            return {
+              flight: null,
+              updatedAt: new Date().toISOString(),
+              stale: false,
+              source: 'opensky',
+            };
+          }
+
+          const normalizedFlight = this.normalizeStateVector(matchingState);
+          if (!normalizedFlight) {
+            return {
+              flight: null,
+              updatedAt: new Date().toISOString(),
+              stale: false,
+              source: 'opensky',
+            };
+          }
+
+          const details: NormalizedFlightDetails = {
+            ...normalizedFlight,
+            aircraft: {
+              registration: undefined,
+              type: undefined,
+            },
+          };
+
+          return {
+            flight: details,
+            updatedAt: new Date().toISOString(),
+            stale: false,
+            source: 'opensky',
+          };
+        } catch (retryError) {
+          this.logger.warn('OpenSky API request failed even as anonymous user');
+          throw retryError;
+        }
       }
+      
       throw error;
     }
   }
