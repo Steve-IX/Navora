@@ -279,6 +279,14 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
   const getLiveFlightsBbox = (): string | undefined => {
     if (!map.current) return undefined;
+    
+    // If zoomed out enough (zoom < 4), use global scope instead of bounding box
+    // This provides better coverage and avoids missing flights at map edges
+    const currentZoom = map.current.getZoom();
+    if (currentZoom < 4) {
+      return undefined; // Global scope
+    }
+    
     const bounds = map.current.getBounds();
     if (!bounds) return undefined;
     const southWest = bounds.getSouthWest();
@@ -530,11 +538,16 @@ export const MapView: React.FC<MapViewProps> = ({ onMapClick, onPoiClick, childr
 
       try {
         const bbox = getLiveFlightsBbox();
-        const response = await liveFlightsService.getLiveFlights({
-          bbox,
-          max: 250,
+        const currentZoom = map.current?.getZoom() ?? 2;
+        
+        // Use global scope when zoomed out or when bbox is not available
+        const query: Parameters<typeof liveFlightsService.getLiveFlights>[0] = {
+          ...(bbox ? { bbox } : { region: 'GLOBAL' }),
+          max: currentZoom < 4 ? 500 : 250, // More flights when zoomed out globally
           ...liveFlightFilters,
-        });
+        };
+        
+        const response = await liveFlightsService.getLiveFlights(query);
         if (!isMounted) return;
         console.log('[LiveFlights] Received flights:', response.flights.length, response.flights);
         setFlights(response.flights, response.updatedAt, response.stale);

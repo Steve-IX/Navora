@@ -227,9 +227,14 @@ export class FlightawareService {
       params.lomax = bounds.maxLon;
     }
 
-    this.logger.debug(
-      `OpenSky query params: lamin=${params.lamin}, lamax=${params.lamax}, lomin=${params.lomin}, lomax=${params.lomax}`,
-    );
+    const isGlobalQuery = Object.keys(params).length === 0;
+    if (isGlobalQuery) {
+      this.logger.debug('OpenSky query: GLOBAL (no bounding box)');
+    } else {
+      this.logger.debug(
+        `OpenSky query params: lamin=${params.lamin}, lamax=${params.lamax}, lomin=${params.lomin}, lomax=${params.lomax}`,
+      );
+    }
 
     try {
       const headers = await this.getAuthHeaders();
@@ -260,7 +265,7 @@ export class FlightawareService {
             .map((state) => this.normalizeStateVector(state))
             .filter((flight): flight is NormalizedFlightSummary => flight !== null)
             .filter((flight) => this.applyPostFilters(flight, query))
-            .slice(0, max ?? 200);
+            .slice(0, max ?? 500);
 
           return {
             region: region ?? 'global',
@@ -281,11 +286,14 @@ export class FlightawareService {
       }
 
       // Normalize and filter flights
+      // Use higher default limit for global queries (no bounding box)
+      const isGlobalQuery = Object.keys(params).length === 0;
+      const defaultMax = isGlobalQuery ? 500 : 200;
       const normalizedFlights = states
         .map((state) => this.normalizeStateVector(state))
         .filter((flight): flight is NormalizedFlightSummary => flight !== null)
         .filter((flight) => this.applyPostFilters(flight, query))
-        .slice(0, max ?? 200);
+        .slice(0, max ?? defaultMax);
 
       this.logger.log(`Returning ${normalizedFlights.length} flights after filtering`);
 
@@ -321,7 +329,7 @@ export class FlightawareService {
             .map((state) => this.normalizeStateVector(state))
             .filter((flight): flight is NormalizedFlightSummary => flight !== null)
             .filter((flight) => this.applyPostFilters(flight, query))
-            .slice(0, max ?? 200);
+            .slice(0, max ?? 500);
 
           return {
             region: region ?? 'global',
