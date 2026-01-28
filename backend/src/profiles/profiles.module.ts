@@ -11,4 +11,3 @@ import { UserProfile } from './entities/user-profile.entity';
   exports: [ProfilesService],
 })
 export class ProfilesModule {}
-

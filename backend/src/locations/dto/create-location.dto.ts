@@ -23,4 +23,3 @@ export class CreateLocationDto {
   @IsOptional()
   category?: string;
 }
-

@@ -11,4 +11,3 @@ import { PlaceReview } from './entities/place-review.entity';
   exports: [ReviewsService],
 })
 export class ReviewsModule {}
-

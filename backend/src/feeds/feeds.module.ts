@@ -12,4 +12,3 @@ import { FriendsModule } from '../friends/friends.module';
   exports: [FeedsService],
 })
 export class FeedsModule {}
-

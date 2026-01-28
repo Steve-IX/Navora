@@ -12,4 +12,3 @@ import { ProfilesModule } from '../profiles/profiles.module';
   exports: [FriendsService],
 })
 export class FriendsModule {}
-

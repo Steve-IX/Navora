@@ -25,4 +25,3 @@ import { GeocodingModule } from '../geocoding/geocoding.module';
   exports: [RoutingService],
 })
 export class RoutingModule {}
-

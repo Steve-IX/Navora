@@ -40,4 +40,3 @@ export class RouteHistory {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
-

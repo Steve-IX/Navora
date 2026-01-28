@@ -5,4 +5,3 @@
 export function isGuestUserId(userId: string): boolean {
   return typeof userId === 'string' && userId.startsWith('guest_');
 }
-

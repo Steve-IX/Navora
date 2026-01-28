@@ -21,4 +21,3 @@ export class UsersController {
     return this.usersService.searchUsers(query, req.user.id);
   }
 }
-

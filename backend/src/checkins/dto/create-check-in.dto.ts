@@ -26,4 +26,3 @@ export class CreateCheckInDto {
   @IsString()
   note?: string;
 }
-

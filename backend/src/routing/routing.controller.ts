@@ -1,9 +1,30 @@
-import { Controller, Post, Body, Get, Query, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Query,
+  UseGuards,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { RoutingService, FlightSearchParams, AirportSearchParams } from './routing.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { RoutingRequest } from '@shared/types/routing';
-import { IsArray, IsNotEmpty, ValidateNested, IsEnum, IsOptional, IsBoolean, IsIn, IsNumber, IsObject, IsString, ValidateIf } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  ValidateNested,
+  IsEnum,
+  IsOptional,
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsObject,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { RoutingProfile } from '@shared/types/routing';
 
@@ -114,16 +135,12 @@ export class RoutingController {
   @Post('route')
   async getRoute(@Body() routingRequest: RoutingRequestDto) {
     try {
-      return await this.routingService.getRoute(
-        routingRequest.waypoints,
-        routingRequest.profile,
-        {
-          alternatives: routingRequest.alternatives,
-          geometries: routingRequest.geometries,
-          overview: routingRequest.overview,
-          steps: routingRequest.steps,
-        },
-      );
+      return await this.routingService.getRoute(routingRequest.waypoints, routingRequest.profile, {
+        alternatives: routingRequest.alternatives,
+        geometries: routingRequest.geometries,
+        overview: routingRequest.overview,
+        steps: routingRequest.steps,
+      });
     } catch (error) {
       // Re-throw HttpException as-is to preserve status codes and messages
       if (error instanceof HttpException) {
@@ -172,4 +189,3 @@ export class RoutingController {
     }
   }
 }
-

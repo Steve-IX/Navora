@@ -50,4 +50,3 @@ export class FriendsController {
     return { message: 'Friend removed' };
   }
 }
-

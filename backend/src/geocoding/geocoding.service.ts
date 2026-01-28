@@ -19,18 +19,19 @@ export class GeocodingService {
     }
   }
 
-  async forwardGeocode(query: string, options?: {
-    proximity?: Coordinates;
-    bbox?: [number, number, number, number];
-    limit?: number;
-  }): Promise<GeocodeResult[]> {
+  async forwardGeocode(
+    query: string,
+    options?: {
+      proximity?: Coordinates;
+      bbox?: [number, number, number, number];
+      limit?: number;
+    },
+  ): Promise<GeocodeResult[]> {
     try {
       const proximityParam = options?.proximity
         ? `&proximity=${options.proximity.longitude},${options.proximity.latitude}`
         : '';
-      const bboxParam = options?.bbox
-        ? `&bbox=${options.bbox.join(',')}`
-        : '';
+      const bboxParam = options?.bbox ? `&bbox=${options.bbox.join(',')}` : '';
       const limitParam = options?.limit ? `&limit=${options.limit}` : '&limit=10';
 
       const url = `${this.mapboxApiUrl}/mapbox.places/${encodeURIComponent(query)}.json?access_token=${this.mapboxAccessToken}${proximityParam}${bboxParam}${limitParam}`;
@@ -53,10 +54,7 @@ export class GeocodingService {
         bbox: feature.bbox,
       }));
     } catch (error) {
-      throw new HttpException(
-        'Geocoding request failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Geocoding request failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -82,17 +80,17 @@ export class GeocodingService {
         bbox: feature.bbox,
       }));
     } catch (error) {
-      throw new HttpException(
-        'Reverse geocoding request failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Reverse geocoding request failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async autocomplete(query: string, options?: {
-    proximity?: Coordinates;
-    limit?: number;
-  }): Promise<GeocodeResult[]> {
+  async autocomplete(
+    query: string,
+    options?: {
+      proximity?: Coordinates;
+      limit?: number;
+    },
+  ): Promise<GeocodeResult[]> {
     // Same as forward geocode but with autocomplete=true
     return this.forwardGeocode(query, {
       ...options,
@@ -100,4 +98,3 @@ export class GeocodingService {
     });
   }
 }
-

@@ -25,7 +25,10 @@ export class ReviewsController {
 
   @Get('place/:placeId')
   async getReviewsForPlace(@Param('placeId') placeId: string, @Query('limit') limit?: string) {
-    const reviews = await this.reviewsService.getReviewsForPlace(placeId, limit ? parseInt(limit) : 50);
+    const reviews = await this.reviewsService.getReviewsForPlace(
+      placeId,
+      limit ? parseInt(limit) : 50,
+    );
     const avgRating = await this.reviewsService.getAverageRating(placeId);
     return { reviews, averageRating: avgRating };
   }
@@ -50,4 +53,3 @@ export class ReviewsController {
     return { message: 'Review deleted' };
   }
 }
-

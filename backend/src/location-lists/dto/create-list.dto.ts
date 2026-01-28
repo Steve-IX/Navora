@@ -13,4 +13,3 @@ export class CreateListDto {
   @IsBoolean()
   isPublic?: boolean;
 }
-

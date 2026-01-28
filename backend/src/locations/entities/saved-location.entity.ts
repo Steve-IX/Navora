@@ -39,4 +39,3 @@ export class SavedLocation {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
-

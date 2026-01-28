@@ -21,4 +21,3 @@ import { FriendsModule } from '../friends/friends.module';
   exports: [WebsocketGateway],
 })
 export class WebsocketModule {}
-

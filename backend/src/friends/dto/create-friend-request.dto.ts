@@ -4,4 +4,3 @@ export class CreateFriendRequestDto {
   @IsUUID()
   addresseeId: string;
 }
-

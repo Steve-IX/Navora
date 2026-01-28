@@ -17,4 +17,3 @@ export class LocationSharingGuard implements CanActivate {
     return profile.locationSharingEnabled;
   }
 }
-

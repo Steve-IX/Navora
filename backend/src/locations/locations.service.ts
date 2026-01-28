@@ -75,4 +75,3 @@ export class LocationsService {
     await this.locationsRepository.remove(location);
   }
 }
-

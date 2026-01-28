@@ -12,4 +12,3 @@ export class FeedsController {
     return this.feedsService.getSocialFeed(req.user.id, limit ? parseInt(limit) : 50);
   }
 }
-

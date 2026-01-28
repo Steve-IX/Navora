@@ -21,4 +21,3 @@ export class UpdateLocationDto {
   @IsOptional()
   category?: string;
 }
-

@@ -127,4 +127,3 @@ export class LocationListsService {
     await this.listsRepository.remove(list);
   }
 }
-

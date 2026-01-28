@@ -2,7 +2,11 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GroupTrip, TripStatus } from './entities/group-trip.entity';
-import { TripParticipant, ParticipantStatus, ParticipantRole } from './entities/trip-participant.entity';
+import {
+  TripParticipant,
+  ParticipantStatus,
+  ParticipantRole,
+} from './entities/trip-participant.entity';
 import { TripWaypoint } from './entities/trip-waypoint.entity';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { AddWaypointDto } from './dto/add-waypoint.dto';
@@ -86,7 +90,13 @@ export class TripsService {
 
     const trip = await this.tripsRepository.findOne({
       where: { id: tripId },
-      relations: ['organizer', 'participants', 'participants.user', 'waypoints', 'waypoints.addedBy'],
+      relations: [
+        'organizer',
+        'participants',
+        'participants.user',
+        'waypoints',
+        'waypoints.addedBy',
+      ],
       order: { waypoints: { orderIndex: 'ASC' } },
     });
 
@@ -97,7 +107,11 @@ export class TripsService {
     return trip;
   }
 
-  async inviteParticipant(tripId: string, organizerId: string, userId: string): Promise<TripParticipant> {
+  async inviteParticipant(
+    tripId: string,
+    organizerId: string,
+    userId: string,
+  ): Promise<TripParticipant> {
     const trip = await this.tripsRepository.findOne({
       where: { id: tripId, organizerId },
     });
@@ -182,7 +196,11 @@ export class TripsService {
     await this.waypointsRepository.remove(waypoint);
   }
 
-  async updateTripStatus(tripId: string, organizerId: string, status: TripStatus): Promise<GroupTrip> {
+  async updateTripStatus(
+    tripId: string,
+    organizerId: string,
+    status: TripStatus,
+  ): Promise<GroupTrip> {
     const trip = await this.tripsRepository.findOne({
       where: { id: tripId, organizerId },
     });
@@ -195,4 +213,3 @@ export class TripsService {
     return this.tripsRepository.save(trip);
   }
 }
-

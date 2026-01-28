@@ -58,4 +58,3 @@ export class TripParticipant {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
-

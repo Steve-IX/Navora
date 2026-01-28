@@ -15,11 +15,16 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       password: this.configService.get('DB_PASSWORD') || 'postgres',
       database: this.configService.get('DB_NAME') || 'gps_mapping',
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-      synchronize: this.configService.get('DB_SYNCHRONIZE') === 'true' || this.configService.get('NODE_ENV') !== 'production',
+      synchronize:
+        this.configService.get('DB_SYNCHRONIZE') === 'true' ||
+        this.configService.get('NODE_ENV') !== 'production',
       logging: this.configService.get('NODE_ENV') === 'development',
-      ssl: this.configService.get('DB_SSL') === 'true' ? {
-        rejectUnauthorized: false,
-      } : false,
+      ssl:
+        this.configService.get('DB_SSL') === 'true'
+          ? {
+              rejectUnauthorized: false,
+            }
+          : false,
       extra: {
         // PostGIS extension
         max: 20,
@@ -27,4 +32,3 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
     };
   }
 }
-

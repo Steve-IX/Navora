@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  Param,
-  UseGuards,
-  ParseFloatPipe,
-} from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, ParseFloatPipe } from '@nestjs/common';
 import { GeocodingService } from './geocoding.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -38,4 +31,3 @@ export class GeocodingController {
     return this.geocodingService.autocomplete(query);
   }
 }
-

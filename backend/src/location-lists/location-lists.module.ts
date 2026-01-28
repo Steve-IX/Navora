@@ -12,4 +12,3 @@ import { LocationListItem } from './entities/location-list-item.entity';
   exports: [LocationListsService],
 })
 export class LocationListsModule {}
-

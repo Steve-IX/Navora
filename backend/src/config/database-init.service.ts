@@ -52,8 +52,8 @@ export class DatabaseInitService {
         // PostGIS might not be available (e.g., on Railway's standard PostgreSQL)
         this.logger.warn(
           `PostGIS extension is not available: ${error.message}. ` +
-          `This is expected on Railway's standard PostgreSQL. ` +
-          `Consider using a PostGIS-enabled PostgreSQL template.`,
+            `This is expected on Railway's standard PostgreSQL. ` +
+            `Consider using a PostGIS-enabled PostgreSQL template.`,
         );
       }
     } finally {
@@ -100,13 +100,7 @@ export class DatabaseInitService {
       const statements = migrationSQL
         .split(';')
         .map((s) => s.trim())
-        .filter(
-          (s) =>
-            s.length > 0 &&
-            !s.startsWith('--') &&
-            !s.startsWith('/*') &&
-            s !== '\n',
-        );
+        .filter((s) => s.length > 0 && !s.startsWith('--') && !s.startsWith('/*') && s !== '\n');
 
       this.logger.log(`Executing ${statements.length} migration statements...`);
 
@@ -122,9 +116,7 @@ export class DatabaseInitService {
               !error.message.includes('duplicate') &&
               !error.message.includes('relation already exists')
             ) {
-              this.logger.warn(
-                `Migration statement warning: ${error.message}`,
-              );
+              this.logger.warn(`Migration statement warning: ${error.message}`);
             }
           }
         }
@@ -136,7 +128,7 @@ export class DatabaseInitService {
       if (error.code === 'ENOENT') {
         this.logger.warn(
           'Migration file not found. Skipping manual migrations. ' +
-          'Ensure TypeORM synchronize is enabled or migrations are run manually.',
+            'Ensure TypeORM synchronize is enabled or migrations are run manually.',
         );
       } else {
         throw error;
@@ -146,4 +138,3 @@ export class DatabaseInitService {
     }
   }
 }
-

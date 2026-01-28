@@ -26,4 +26,3 @@ export class AddWaypointDto {
   @IsNumber()
   orderIndex?: number;
 }
-

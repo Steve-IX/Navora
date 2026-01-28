@@ -105,7 +105,8 @@ export class FriendsService {
       });
 
       return friendships.map((friendship) => {
-        const friend = friendship.requesterId === userId ? friendship.addressee : friendship.requester;
+        const friend =
+          friendship.requesterId === userId ? friendship.addressee : friendship.requester;
         return {
           id: friendship.id,
           friendshipId: friendship.id,
@@ -184,4 +185,3 @@ export class FriendsService {
     return !!friendship;
   }
 }
-

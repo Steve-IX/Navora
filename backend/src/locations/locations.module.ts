@@ -11,4 +11,3 @@ import { SavedLocation } from './entities/saved-location.entity';
   exports: [LocationsService],
 })
 export class LocationsModule {}
-

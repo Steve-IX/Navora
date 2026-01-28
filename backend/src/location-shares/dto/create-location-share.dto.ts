@@ -26,4 +26,3 @@ export class CreateLocationShareDto {
   @IsOptional()
   expiresInMinutes?: number;
 }
-

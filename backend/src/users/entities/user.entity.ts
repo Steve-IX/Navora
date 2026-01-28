@@ -32,4 +32,3 @@ export class User {
   @OneToMany(() => RouteHistory, (route) => route.user)
   routeHistory: RouteHistory[];
 }
-

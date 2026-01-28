@@ -19,17 +19,20 @@ export class PlacesService {
     }
   }
 
-  async searchPlaces(query: string, options?: {
-    category?: string;
-    coordinates?: { longitude: number; latitude: number };
-    bbox?: [number, number, number, number];
-    limit?: number;
-  }) {
+  async searchPlaces(
+    query: string,
+    options?: {
+      category?: string;
+      coordinates?: { longitude: number; latitude: number };
+      bbox?: [number, number, number, number];
+      limit?: number;
+    },
+  ) {
     try {
       // Validate and set default limit (Mapbox Search API allows 1-10 for forward search)
       let limit = options?.limit || 10;
       limit = Math.max(1, Math.min(limit, 10));
-      
+
       // Use Mapbox Search API for forward search
       const params = new URLSearchParams({
         q: query,
@@ -39,7 +42,10 @@ export class PlacesService {
       });
 
       if (options?.coordinates) {
-        params.append('proximity', `${options.coordinates.longitude},${options.coordinates.latitude}`);
+        params.append(
+          'proximity',
+          `${options.coordinates.longitude},${options.coordinates.latitude}`,
+        );
       }
 
       if (options?.category) {
@@ -59,7 +65,9 @@ export class PlacesService {
         return [];
       }
 
-      return response.data.features.map((feature: any) => this.transformSearchResult(feature, options?.category));
+      return response.data.features.map((feature: any) =>
+        this.transformSearchResult(feature, options?.category),
+      );
     } catch (error: any) {
       console.error('Places search error:', error.response?.data || error.message);
       return [];
@@ -72,7 +80,7 @@ export class PlacesService {
       // Mapbox URIs (base64 encoded) start with "dXJuOm1ieHBvaTo" - these are from the old geocoding API
       // Mapbox Search API uses mapbox_id which is different format
       // The retrieve endpoint only works with mapbox_id from Search API
-      
+
       // If this is a Mapbox URN (old geocoding API format) or a generated ID, we can't retrieve it
       // Return 404 with helpful message
       if (placeId.startsWith('dXJuOm1ieHBvaTo')) {
@@ -81,7 +89,7 @@ export class PlacesService {
           HttpStatus.NOT_FOUND,
         );
       }
-      
+
       // Generated IDs (starting with 'place-') are for places without mapbox_id and can't be retrieved
       if (placeId.startsWith('place-') && !placeId.includes('mapbox')) {
         throw new HttpException(
@@ -89,15 +97,15 @@ export class PlacesService {
           HttpStatus.NOT_FOUND,
         );
       }
-      
+
       let response;
       let feature;
-      
+
       // Try retrieve endpoint first (works with mapbox_id from Search API)
       try {
         const retrieveUrl = `${this.searchApiUrl}/retrieve/${encodeURIComponent(placeId)}?access_token=${this.mapboxAccessToken}`;
         response = await firstValueFrom(this.httpService.get(retrieveUrl));
-        
+
         if (response.data && response.data.features && response.data.features.length > 0) {
           feature = response.data.features[0];
         } else if (response.data && response.data.type === 'Feature') {
@@ -109,17 +117,21 @@ export class PlacesService {
         try {
           const geocodeUrl = `${this.geocodingApiUrl}/mapbox.places/${encodeURIComponent(placeId)}.json?access_token=${this.mapboxAccessToken}`;
           response = await firstValueFrom(this.httpService.get(geocodeUrl));
-          
+
           if (response.data && response.data.features && response.data.features.length > 0) {
             feature = response.data.features[0];
           }
         } catch (geocodeError: any) {
           // Both endpoints failed - place not found
-          console.error('Place details retrieval failed for ID:', placeId, geocodeError.response?.data || geocodeError.message);
+          console.error(
+            'Place details retrieval failed for ID:',
+            placeId,
+            geocodeError.response?.data || geocodeError.message,
+          );
           throw new HttpException('Place not found', HttpStatus.NOT_FOUND);
         }
       }
-      
+
       if (!feature) {
         throw new HttpException('Place not found', HttpStatus.NOT_FOUND);
       }
@@ -141,22 +153,22 @@ export class PlacesService {
         throw error;
       }
       console.error('Place details error:', error.response?.data || error.message);
-      throw new HttpException(
-        'Failed to get place details',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get place details', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async getNearbyPlaces(coordinates: { longitude: number; latitude: number }, options?: {
-    category?: string;
-    radius?: number;
-    limit?: number;
-  }) {
+  async getNearbyPlaces(
+    coordinates: { longitude: number; latitude: number },
+    options?: {
+      category?: string;
+      radius?: number;
+      limit?: number;
+    },
+  ) {
     try {
       // Validate and set default limit
       let limit = options?.limit || 20;
-      
+
       // Validate limit range
       if (options?.category) {
         // Category searches: limit must be between 1 and 10
@@ -165,7 +177,7 @@ export class PlacesService {
         // Non-category searches: limit must be between 1 and 20
         limit = Math.max(1, Math.min(limit, 20));
       }
-      
+
       // Use Mapbox Search API category endpoint for nearby POI searches
       if (options?.category) {
         const mapboxCategory = this.mapCategoryToSearchCategory(options.category);
@@ -180,13 +192,13 @@ export class PlacesService {
           });
 
           const url = `${this.searchApiUrl}/category/${mapboxCategory}?${params.toString()}`;
-          
+
           try {
             const response = await firstValueFrom(this.httpService.get(url));
 
             if (response.data && response.data.features) {
-              const results = response.data.features.map((feature: any) => 
-                this.transformSearchResult(feature, options.category)
+              const results = response.data.features.map((feature: any) =>
+                this.transformSearchResult(feature, options.category),
               );
               // Return up to the requested limit
               return results.slice(0, limit);
@@ -202,7 +214,8 @@ export class PlacesService {
       const allResults: any[] = [];
       const seenIds = new Set<string>();
 
-      for (const term of searchTerms.slice(0, 3)) { // Limit to 3 terms for performance
+      for (const term of searchTerms.slice(0, 3)) {
+        // Limit to 3 terms for performance
         try {
           const params = new URLSearchParams({
             q: term,
@@ -222,14 +235,14 @@ export class PlacesService {
               if (!seenIds.has(id)) {
                 seenIds.add(id);
                 const place = this.transformSearchResult(feature, options?.category);
-                
+
                 // Filter by radius if specified
                 if (options?.radius) {
                   const distance = this.calculateDistance(
                     coordinates.latitude,
                     coordinates.longitude,
                     place.coordinates.latitude,
-                    place.coordinates.longitude
+                    place.coordinates.longitude,
                   );
                   if (distance <= options.radius) {
                     allResults.push({ ...place, distance });
@@ -256,11 +269,15 @@ export class PlacesService {
     }
   }
 
-  private transformSearchResult(feature: any, categoryHint?: string | null, includeDetails = false): any {
+  private transformSearchResult(
+    feature: any,
+    categoryHint?: string | null,
+    includeDetails = false,
+  ): any {
     const properties = feature.properties || {};
     const geometry = feature.geometry || {};
     const context = properties.context || {};
-    
+
     // Get coordinates
     let coords = { longitude: 0, latitude: 0 };
     if (geometry.coordinates) {
@@ -287,13 +304,22 @@ export class PlacesService {
       category = this.inferCategory(feature.place_type);
     }
 
-    const placeName = properties.name || properties.text || feature.text || 
-                      properties.place_name || feature.place_name || 'Unknown Place';
-    
+    const placeName =
+      properties.name ||
+      properties.text ||
+      feature.text ||
+      properties.place_name ||
+      feature.place_name ||
+      'Unknown Place';
+
     // Build address
-    let address = properties.full_address || properties.place_formatted || 
-                  properties.address || feature.place_name || '';
-    
+    let address =
+      properties.full_address ||
+      properties.place_formatted ||
+      properties.address ||
+      feature.place_name ||
+      '';
+
     if (context.place?.name) {
       address = address || context.place.name;
     }
@@ -301,11 +327,11 @@ export class PlacesService {
     // Prefer mapbox_id for retrieval, but keep original ID as fallback
     const mapboxId = properties.mapbox_id;
     const originalId = feature.id || `place-${Date.now()}`;
-    
+
     // Check if originalId is an old-format ID (starts with 'dXJuOm1ieHBvaTo')
     // These IDs cannot be retrieved via the retrieve endpoint
     const isOldFormatId = originalId && originalId.startsWith('dXJuOm1ieHBvaTo');
-    
+
     // If we have mapbox_id, use it. Otherwise, if originalId is old-format, generate a new ID
     // This ensures we never return old-format IDs that can't be retrieved
     let placeId: string;
@@ -318,7 +344,7 @@ export class PlacesService {
     } else {
       placeId = originalId;
     }
-    
+
     const result: any = {
       id: placeId, // Use mapbox_id if available, otherwise use safe ID
       originalId: originalId, // Keep original ID in case we need it
@@ -405,7 +431,7 @@ export class PlacesService {
       bus_station: 'bus_station',
       train_station: 'train_station',
     };
-    
+
     // Handle array of categories
     if (Array.isArray(searchCategory)) {
       for (const cat of searchCategory) {
@@ -414,10 +440,10 @@ export class PlacesService {
       }
       return undefined;
     }
-    
+
     // Handle string (comma-separated or single)
     const categoryStr = String(searchCategory);
-    const categories = categoryStr.split(',').map(c => c.trim().toLowerCase());
+    const categories = categoryStr.split(',').map((c) => c.trim().toLowerCase());
     for (const cat of categories) {
       if (reverseMap[cat]) return reverseMap[cat];
     }
@@ -484,7 +510,7 @@ export class PlacesService {
 
   private inferCategory(placeTypes: string[]): string | undefined {
     if (!placeTypes || placeTypes.length === 0) return undefined;
-    
+
     const typeMap: Record<string, string> = {
       restaurant: 'restaurant',
       cafe: 'cafe',
@@ -518,7 +544,7 @@ export class PlacesService {
 
   private getCategoryIcon(category?: string): string {
     if (!category) return '📍';
-    
+
     const iconMap: Record<string, string> = {
       restaurant: '🍽️',
       cafe: '☕',
@@ -541,7 +567,7 @@ export class PlacesService {
       bus_station: '🚌',
       train_station: '🚆',
     };
-    
+
     return iconMap[category] || '📍';
   }
 
@@ -552,21 +578,22 @@ export class PlacesService {
     const Δφ = ((lat2 - lat1) * Math.PI) / 180;
     const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
   }
 
   private generateRating(placeName: string, category?: string): number {
-    const hash = placeName.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
+    const hash = placeName.split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0);
     const normalized = Math.abs(hash % 100) / 100;
     return Math.round((3.5 + normalized * 1.5) * 10) / 10;
   }
 
   private generateReviewCount(placeName: string, category?: string): number {
-    const hash = placeName.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
+    const hash = placeName.split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0);
     const base = category === 'restaurant' || category === 'cafe' ? 100 : 30;
     return base + Math.abs(hash % 300);
   }
@@ -619,7 +646,7 @@ export class PlacesService {
   private generatePlacePhotos(placeName: string, category?: string): any[] {
     const query = category ? `${category}` : 'place';
     const encodedQuery = encodeURIComponent(query);
-    
+
     return [
       {
         id: 'main',

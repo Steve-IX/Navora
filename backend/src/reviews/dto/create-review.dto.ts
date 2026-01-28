@@ -1,4 +1,12 @@
-import { IsString, IsNumber, IsOptional, Min, Max, ValidateNested, IsNotEmpty } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  Max,
+  ValidateNested,
+  IsNotEmpty,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { Coordinates } from '@shared/types/geocoding';
 
@@ -31,4 +39,3 @@ export class CreateReviewDto {
   @IsString()
   comment?: string;
 }
-

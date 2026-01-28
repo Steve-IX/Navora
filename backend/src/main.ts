@@ -13,9 +13,9 @@ async function bootstrap() {
 
   // Initialize database (enable extensions, run migrations)
   // Only run in production or if explicitly enabled
-  const runDbInit = configService.get('RUN_DB_INIT') === 'true' || 
-                    configService.get('NODE_ENV') === 'production';
-  
+  const runDbInit =
+    configService.get('RUN_DB_INIT') === 'true' || configService.get('NODE_ENV') === 'production';
+
   if (runDbInit) {
     try {
       const dataSource = app.get(DataSource);
@@ -33,9 +33,9 @@ async function bootstrap() {
   // IMPORTANT: Configure CORS BEFORE helmet to ensure preflight requests work
   const frontendUrl = configService.get('FRONTEND_URL') || 'http://localhost:5173';
   const allowedOrigins = frontendUrl.split(',').map((url: string) => url.trim());
-  
+
   console.log(`[CORS] Configuring CORS with allowed origins: ${allowedOrigins.join(', ')}`);
-  
+
   // Enable CORS - use simple array for better compatibility with Railway
   app.enableCors({
     origin: allowedOrigins, // Simple array instead of function
@@ -49,10 +49,12 @@ async function bootstrap() {
   });
 
   // Security - configure helmet to work with CORS
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    crossOriginEmbedderPolicy: false,
-  }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -65,11 +67,11 @@ async function bootstrap() {
 
   // Railway automatically sets PORT env var - use it or default to 3000
   const port = process.env.PORT || configService.get('PORT') || 3000;
-  
+
   console.log(`[STARTUP] Attempting to start on port: ${port}`);
   console.log(`[STARTUP] PORT env var: ${process.env.PORT}`);
   console.log(`[STARTUP] ConfigService PORT: ${configService.get('PORT')}`);
-  
+
   try {
     // Listen on 0.0.0.0 for Railway/Docker compatibility
     await app.listen(port, '0.0.0.0');
@@ -85,4 +87,3 @@ bootstrap().catch((error) => {
   console.error('❌ Bootstrap failed:', error);
   process.exit(1);
 });
-

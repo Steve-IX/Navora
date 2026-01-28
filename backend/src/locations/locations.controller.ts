@@ -35,11 +35,7 @@ export class LocationsController {
   }
 
   @Patch(':id')
-  update(
-    @Request() req,
-    @Param('id') id: string,
-    @Body() updateLocationDto: UpdateLocationDto,
-  ) {
+  update(@Request() req, @Param('id') id: string, @Body() updateLocationDto: UpdateLocationDto) {
     return this.locationsService.update(id, req.user.id, updateLocationDto);
   }
 
@@ -48,4 +44,3 @@ export class LocationsController {
     return this.locationsService.remove(id, req.user.id);
   }
 }
-

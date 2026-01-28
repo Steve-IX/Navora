@@ -7,14 +7,9 @@ import { FriendsModule } from '../friends/friends.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([LocationShare]),
-    FriendsModule,
-    ProfilesModule,
-  ],
+  imports: [TypeOrmModule.forFeature([LocationShare]), FriendsModule, ProfilesModule],
   controllers: [LocationSharesController],
   providers: [LocationSharesService],
   exports: [LocationSharesService],
 })
 export class LocationSharesModule {}
-

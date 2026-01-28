@@ -10,4 +10,3 @@ import { PlacesController } from './places.controller';
   exports: [PlacesService],
 })
 export class PlacesModule {}
-

@@ -49,4 +49,3 @@ export class Friendship {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }
-

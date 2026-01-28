@@ -7,11 +7,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
 @Module({
-  imports: [
-    HttpModule,
-    ConfigModule,
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
-  ],
+  imports: [HttpModule, ConfigModule, ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }])],
   controllers: [GeocodingController],
   providers: [
     GeocodingService,
@@ -23,4 +19,3 @@ import { APP_GUARD } from '@nestjs/core';
   exports: [GeocodingService],
 })
 export class GeocodingModule {}
-

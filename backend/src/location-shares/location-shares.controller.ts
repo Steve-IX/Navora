@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  Param,
-  UseGuards,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { LocationSharesService } from './location-shares.service';
 import { CreateLocationShareDto } from './dto/create-location-share.dto';
@@ -38,4 +29,3 @@ export class LocationSharesController {
     return { message: 'Location share stopped' };
   }
 }
-

@@ -13,4 +13,3 @@ export class CreateTripDto {
   @IsDateString()
   endDate?: string;
 }
-

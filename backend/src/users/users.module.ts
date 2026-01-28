@@ -7,14 +7,9 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { FriendsModule } from '../friends/friends.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([User]),
-    ProfilesModule,
-    FriendsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([User]), ProfilesModule, FriendsModule],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],
 })
 export class UsersModule {}
-

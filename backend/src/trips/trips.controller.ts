@@ -36,7 +36,11 @@ export class TripsController {
   }
 
   @Post(':id/participants')
-  async inviteParticipant(@Request() req, @Param('id') id: string, @Body() body: { userId: string }) {
+  async inviteParticipant(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: { userId: string },
+  ) {
     return this.tripsService.inviteParticipant(id, req.user.id, body.userId);
   }
 
@@ -46,14 +50,21 @@ export class TripsController {
   }
 
   @Delete(':id/waypoints/:waypointId')
-  async removeWaypoint(@Request() req, @Param('id') id: string, @Param('waypointId') waypointId: string) {
+  async removeWaypoint(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('waypointId') waypointId: string,
+  ) {
     await this.tripsService.removeWaypoint(id, req.user.id, waypointId);
     return { message: 'Waypoint removed' };
   }
 
   @Patch(':id/status')
-  async updateStatus(@Request() req, @Param('id') id: string, @Body() body: { status: TripStatus }) {
+  async updateStatus(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: { status: TripStatus },
+  ) {
     return this.tripsService.updateTripStatus(id, req.user.id, body.status);
   }
 }
-

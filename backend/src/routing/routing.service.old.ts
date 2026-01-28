@@ -18,7 +18,10 @@ export class RoutingService {
   private readonly aviationStackApiKey: string;
   private readonly aviationStackApiUrl = 'https://api.aviationstack.com/v1';
   // Airport cache: coordinates -> airport info with TTL
-  private airportCache: Map<string, { airport: { iata: string; name: string; lat: number; lng: number }; expires: number }> = new Map();
+  private airportCache: Map<
+    string,
+    { airport: { iata: string; name: string; lat: number; lng: number }; expires: number }
+  > = new Map();
   private readonly airportCacheTTL = 24 * 60 * 60 * 1000; // 24 hours
 
   constructor(
@@ -46,10 +49,7 @@ export class RoutingService {
   ): Promise<RoutingResponse> {
     try {
       if (waypoints.length < 2) {
-        throw new HttpException(
-          'At least two waypoints are required',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('At least two waypoints are required', HttpStatus.BAD_REQUEST);
       }
 
       // Validate waypoint coordinates
@@ -61,17 +61,17 @@ export class RoutingService {
             HttpStatus.BAD_REQUEST,
           );
         }
-        if (typeof wp.coordinates.latitude !== 'number' || typeof wp.coordinates.longitude !== 'number') {
+        if (
+          typeof wp.coordinates.latitude !== 'number' ||
+          typeof wp.coordinates.longitude !== 'number'
+        ) {
           throw new HttpException(
             `Waypoint ${i + 1} has invalid coordinates`,
             HttpStatus.BAD_REQUEST,
           );
         }
         if (isNaN(wp.coordinates.latitude) || isNaN(wp.coordinates.longitude)) {
-          throw new HttpException(
-            `Waypoint ${i + 1} has NaN coordinates`,
-            HttpStatus.BAD_REQUEST,
-          );
+          throw new HttpException(`Waypoint ${i + 1} has NaN coordinates`, HttpStatus.BAD_REQUEST);
         }
         // Validate coordinate ranges
         if (wp.coordinates.latitude < -90 || wp.coordinates.latitude > 90) {
@@ -116,10 +116,7 @@ export class RoutingService {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new HttpException(
-        'Routing request failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Routing request failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -203,9 +200,9 @@ export class RoutingService {
       // Map transit to driving for Mapbox (transit requires different endpoint)
       const mapboxProfile = mode === 'transit' ? 'driving' : mode;
       const coordinates = `${from.longitude},${from.latitude};${to.longitude},${to.latitude}`;
-      
+
       const url = `${this.mapboxApiUrl}/mapbox/${mapboxProfile}/${coordinates}?access_token=${this.mapboxAccessToken}&geometries=geojson&overview=full&steps=true`;
-      
+
       const response = await firstValueFrom(this.httpService.get(url));
       const data = response.data;
 
@@ -214,20 +211,22 @@ export class RoutingService {
         const distance = this.calculateGreatCircleDistance(from, to);
         const speed = mode === 'walking' ? 1.4 : mode === 'transit' ? 10 : 50; // m/s
         const duration = distance / speed;
-        
+
         return {
           distance,
           duration,
           geometry: [from, to],
-          steps: [{
-            distance,
-            duration,
-            instruction: `Travel to destination via ${mode}`,
-            maneuver: {
-              type: 'depart',
-              location: from,
+          steps: [
+            {
+              distance,
+              duration,
+              instruction: `Travel to destination via ${mode}`,
+              maneuver: {
+                type: 'depart',
+                location: from,
+              },
             },
-          }],
+          ],
         };
       }
 
@@ -241,18 +240,19 @@ export class RoutingService {
           longitude: coord[0],
           latitude: coord[1],
         })),
-        steps: leg.steps?.map((step: any) => ({
-          distance: step.distance,
-          duration: step.duration,
-          instruction: step.maneuver.instruction || step.maneuver.type,
-          maneuver: {
-            type: step.maneuver.type,
-            location: {
-              longitude: step.maneuver.location[0],
-              latitude: step.maneuver.location[1],
+        steps:
+          leg.steps?.map((step: any) => ({
+            distance: step.distance,
+            duration: step.duration,
+            instruction: step.maneuver.instruction || step.maneuver.type,
+            maneuver: {
+              type: step.maneuver.type,
+              location: {
+                longitude: step.maneuver.location[0],
+                latitude: step.maneuver.location[1],
+              },
             },
-          },
-        })) || [],
+          })) || [],
       };
     } catch (error) {
       console.warn('Error calculating ground transport, using fallback:', error);
@@ -260,20 +260,22 @@ export class RoutingService {
       const distance = this.calculateGreatCircleDistance(from, to);
       const speed = mode === 'walking' ? 1.4 : mode === 'transit' ? 10 : 50; // m/s
       const duration = distance / speed;
-      
+
       return {
         distance,
         duration,
         geometry: [from, to],
-        steps: [{
-          distance,
-          duration,
-          instruction: `Travel to destination via ${mode} (estimated)`,
-          maneuver: {
-            type: 'depart',
-            location: from,
+        steps: [
+          {
+            distance,
+            duration,
+            instruction: `Travel to destination via ${mode} (estimated)`,
+            maneuver: {
+              type: 'depart',
+              location: from,
+            },
           },
-        }],
+        ],
       };
     }
   }
@@ -306,7 +308,7 @@ export class RoutingService {
         origin.coordinates,
         destination.coordinates,
       );
-      
+
       // Only validate distance for very close locations (less than 100m)
       // This prevents false positives for nearby addresses that are still valid flight routes
       if (originDestDistance < 100) {
@@ -325,10 +327,14 @@ export class RoutingService {
 
       // Step 2: Calculate ground transport from origin to departure airport
       // Try multiple transport modes and select the best option
-      const transportModes: Array<'driving' | 'transit' | 'walking'> = ['driving', 'transit', 'walking'];
+      const transportModes: Array<'driving' | 'transit' | 'walking'> = [
+        'driving',
+        'transit',
+        'walking',
+      ];
       let toAirportTransport: any = null;
       let bestTransportMode: 'driving' | 'transit' | 'walking' = 'driving';
-      
+
       // Try driving first (most common), then transit, then walking
       for (const mode of transportModes) {
         try {
@@ -337,7 +343,10 @@ export class RoutingService {
             { longitude: departureAirport.lng, latitude: departureAirport.lat },
             mode,
           );
-          if (transport && (!toAirportTransport || transport.duration < toAirportTransport.duration)) {
+          if (
+            transport &&
+            (!toAirportTransport || transport.duration < toAirportTransport.duration)
+          ) {
             toAirportTransport = transport;
             bestTransportMode = mode;
           }
@@ -346,7 +355,7 @@ export class RoutingService {
           continue;
         }
       }
-      
+
       // If no transport found, use driving as fallback
       if (!toAirportTransport) {
         toAirportTransport = await this.calculateGroundTransport(
@@ -418,8 +427,11 @@ export class RoutingService {
       }
 
       // Step 4: Find optimal flight route (direct or connecting)
-      const flightRoute = await this.findOptimalFlightRoute(departureAirport, arrivalAirportCandidate);
-      
+      const flightRoute = await this.findOptimalFlightRoute(
+        departureAirport,
+        arrivalAirportCandidate,
+      );
+
       // Validate flight route segments
       if (flightRoute.segments.length === 0) {
         throw new HttpException(
@@ -430,11 +442,11 @@ export class RoutingService {
 
       // Validate: Check for circular flights (same airport appears multiple times)
       const airportSequence: string[] = [];
-      flightRoute.segments.forEach(segment => {
+      flightRoute.segments.forEach((segment) => {
         airportSequence.push(segment.departureIata);
         airportSequence.push(segment.arrivalIata);
       });
-      
+
       // Check for immediate circular routes (A -> A)
       for (let i = 0; i < airportSequence.length - 1; i++) {
         if (airportSequence[i] === airportSequence[i + 1]) {
@@ -448,11 +460,11 @@ export class RoutingService {
       // Step 5: Add flight segments as legs
       for (let i = 0; i < flightRoute.segments.length; i++) {
         const segment = flightRoute.segments[i];
-        
+
         // Determine segment start and end coordinates
         let segmentStart: { longitude: number; latitude: number };
         let segmentEnd: { longitude: number; latitude: number };
-        
+
         if (i === 0) {
           segmentStart = { longitude: departureAirport.lng, latitude: departureAirport.lat };
         } else {
@@ -464,37 +476,45 @@ export class RoutingService {
             // For now, estimate - in production, would look up airport coordinates
             segmentStart = { longitude: 0, latitude: 0 }; // Would need airport DB lookup
           } else {
-            segmentStart = { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat };
+            segmentStart = {
+              longitude: arrivalAirportCandidate.lng,
+              latitude: arrivalAirportCandidate.lat,
+            };
           }
         }
-        
+
         if (i === flightRoute.segments.length - 1) {
-          segmentEnd = { longitude: arrivalAirportCandidate.lng, latitude: arrivalAirportCandidate.lat };
+          segmentEnd = {
+            longitude: arrivalAirportCandidate.lng,
+            latitude: arrivalAirportCandidate.lat,
+          };
         } else {
           // Intermediate segment - use transfer airport coordinates (estimated)
           segmentEnd = { longitude: 0, latitude: 0 }; // Would need airport DB lookup
         }
-        
+
         const segmentDistance = this.calculateGreatCircleDistance(segmentStart, segmentEnd);
         const segmentGeometry = this.generateGreatCirclePath([segmentStart, segmentEnd]);
 
         legs.push({
           distance: segmentDistance,
           duration: segment.duration,
-          steps: [{
-            distance: segmentDistance,
-            duration: segment.duration,
-            instruction: segment.flightNumber
-              ? `Flight ${segment.airline || ''} ${segment.flightNumber} from ${segment.departureAirport} (${segment.departureIata}) to ${segment.arrivalAirport} (${segment.arrivalIata})`
-              : `Fly from ${segment.departureAirport} to ${segment.arrivalAirport}`,
-            maneuver: {
-              type: 'depart',
-              location: segmentStart,
+          steps: [
+            {
+              distance: segmentDistance,
+              duration: segment.duration,
+              instruction: segment.flightNumber
+                ? `Flight ${segment.airline || ''} ${segment.flightNumber} from ${segment.departureAirport} (${segment.departureIata}) to ${segment.arrivalAirport} (${segment.arrivalIata})`
+                : `Fly from ${segment.departureAirport} to ${segment.arrivalAirport}`,
+              maneuver: {
+                type: 'depart',
+                location: segmentStart,
+              },
+              transportMode: 'flight',
             },
-            transportMode: 'flight',
-          }],
+          ],
           transportMode: 'flight',
-          modeLabel: segment.flightNumber 
+          modeLabel: segment.flightNumber
             ? `Flight ${segment.flightNumber}`
             : `Flight ${segment.departureIata} → ${segment.arrivalIata}`,
         });
@@ -509,24 +529,26 @@ export class RoutingService {
         if (i < flightRoute.segments.length - 1 && flightRoute.transfers.length > i) {
           const transfer = flightRoute.transfers[i];
           transfers.push(transfer);
-          
+
           legs.push({
             distance: 0,
             duration: transfer.layoverDuration,
-            steps: [{
-              distance: 0,
-              duration: transfer.layoverDuration,
-              instruction: `Transfer at ${transfer.airport} (${transfer.airportIata}) - Layover: ${Math.round(transfer.layoverDuration / 60)} minutes`,
-              maneuver: {
-                type: 'arrive',
-                location: { longitude: 0, latitude: 0 },
+            steps: [
+              {
+                distance: 0,
+                duration: transfer.layoverDuration,
+                instruction: `Transfer at ${transfer.airport} (${transfer.airportIata}) - Layover: ${Math.round(transfer.layoverDuration / 60)} minutes`,
+                maneuver: {
+                  type: 'arrive',
+                  location: { longitude: 0, latitude: 0 },
+                },
+                transportMode: 'transfer',
+                transferInfo: {
+                  airport: transfer.airport,
+                  layoverDuration: transfer.layoverDuration,
+                },
               },
-              transportMode: 'transfer',
-              transferInfo: {
-                airport: transfer.airport,
-                layoverDuration: transfer.layoverDuration,
-              },
-            }],
+            ],
             transportMode: 'transfer',
             modeLabel: `Transfer at ${transfer.airportIata}`,
           });
@@ -538,7 +560,7 @@ export class RoutingService {
       // Try multiple transport modes and select the best option
       let fromAirportTransport: any = null;
       let bestArrivalTransportMode: 'driving' | 'transit' | 'walking' = 'driving';
-      
+
       for (const mode of transportModes) {
         try {
           const transport = await this.calculateGroundTransport(
@@ -546,7 +568,10 @@ export class RoutingService {
             destination.coordinates,
             mode,
           );
-          if (transport && (!fromAirportTransport || transport.duration < fromAirportTransport.duration)) {
+          if (
+            transport &&
+            (!fromAirportTransport || transport.duration < fromAirportTransport.duration)
+          ) {
             fromAirportTransport = transport;
             bestArrivalTransportMode = mode;
           }
@@ -555,7 +580,7 @@ export class RoutingService {
           continue;
         }
       }
-      
+
       // If no transport found, use driving as fallback
       if (!fromAirportTransport) {
         fromAirportTransport = await this.calculateGroundTransport(
@@ -602,7 +627,7 @@ export class RoutingService {
       if (flightSegments.length > 0) {
         const firstSegment = flightSegments[0];
         const lastSegment = flightSegments[flightSegments.length - 1];
-        
+
         flightInfo.airline = firstSegment.airline;
         flightInfo.airlineIata = firstSegment.airlineIata;
         flightInfo.flightNumber = firstSegment.flightNumber;
@@ -670,10 +695,7 @@ export class RoutingService {
 
       if (i > 0) {
         const prevWp = waypoints[i - 1];
-        const distance = this.calculateGreatCircleDistance(
-          prevWp.coordinates,
-          wp.coordinates,
-        );
+        const distance = this.calculateGreatCircleDistance(prevWp.coordinates, wp.coordinates);
         totalDistance += distance;
       }
     }
@@ -688,22 +710,26 @@ export class RoutingService {
       geometry: {
         coordinates: routeCoordinates,
       },
-      legs: [{
+      legs: [
+        {
           distance: totalDistance,
-        duration: flightDuration,
-        steps: [{
-              distance: totalDistance,
           duration: flightDuration,
-          instruction: 'Fly direct to destination (estimated)',
+          steps: [
+            {
+              distance: totalDistance,
+              duration: flightDuration,
+              instruction: 'Fly direct to destination (estimated)',
               maneuver: {
                 type: 'depart',
                 location: waypoints[0].coordinates,
               },
+              transportMode: 'flight',
+            },
+          ],
           transportMode: 'flight',
-        }],
-        transportMode: 'flight',
-        modeLabel: 'Flight',
-      }],
+          modeLabel: 'Flight',
+        },
+      ],
       weight: flightDuration,
       weightName: 'duration',
     };
@@ -778,15 +804,17 @@ export class RoutingService {
       );
       const flightSpeedMps = 250; // m/s
       const duration = distance / flightSpeedMps + 3600; // +1 hour for procedures
-      
+
       return {
-        segments: [{
-          departureAirport: departureAirport.name,
-          departureIata: departureAirport.iata,
-          arrivalAirport: arrivalAirport.name,
-          arrivalIata: arrivalAirport.iata,
-          duration,
-        }],
+        segments: [
+          {
+            departureAirport: departureAirport.name,
+            departureIata: departureAirport.iata,
+            arrivalAirport: arrivalAirport.name,
+            arrivalIata: arrivalAirport.iata,
+            duration,
+          },
+        ],
         transfers: [],
         totalDuration: duration,
       };
@@ -795,7 +823,7 @@ export class RoutingService {
     try {
       // First, try to find direct flights
       const directUrl = `${this.aviationStackApiUrl}/flights?access_key=${this.aviationStackApiKey}&dep_iata=${departureAirport.iata}&arr_iata=${arrivalAirport.iata}&limit=5`;
-      
+
       try {
         const directResponse = await firstValueFrom(this.httpService.get(directUrl));
         const directData = directResponse.data;
@@ -803,10 +831,13 @@ export class RoutingService {
         if (!directData.error && directData.data && directData.data.length > 0) {
           // Found direct flight
           const flight = directData.data[0];
-          let duration = this.calculateGreatCircleDistance(
-            { longitude: departureAirport.lng, latitude: departureAirport.lat },
-            { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
-          ) / 250 + 3600;
+          let duration =
+            this.calculateGreatCircleDistance(
+              { longitude: departureAirport.lng, latitude: departureAirport.lat },
+              { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+            ) /
+              250 +
+            3600;
 
           if (flight.departure?.scheduled && flight.arrival?.scheduled) {
             const depTime = new Date(flight.departure.scheduled).getTime();
@@ -817,20 +848,22 @@ export class RoutingService {
           }
 
           return {
-            segments: [{
-              airline: flight.airline?.name,
-              airlineIata: flight.airline?.iata,
-              flightNumber: flight.flight?.iata || flight.flight?.number,
-              departureAirport: flight.departure?.airport || departureAirport.name,
-              departureIata: flight.departure?.iata || departureAirport.iata,
-              arrivalAirport: flight.arrival?.airport || arrivalAirport.name,
-              arrivalIata: flight.arrival?.iata || arrivalAirport.iata,
-              scheduledDeparture: flight.departure?.scheduled,
-              scheduledArrival: flight.arrival?.scheduled,
-              flightStatus: flight.flight_status,
-              aircraft: flight.aircraft?.registration,
-              duration,
-            }],
+            segments: [
+              {
+                airline: flight.airline?.name,
+                airlineIata: flight.airline?.iata,
+                flightNumber: flight.flight?.iata || flight.flight?.number,
+                departureAirport: flight.departure?.airport || departureAirport.name,
+                departureIata: flight.departure?.iata || departureAirport.iata,
+                arrivalAirport: flight.arrival?.airport || arrivalAirport.name,
+                arrivalIata: flight.arrival?.iata || arrivalAirport.iata,
+                scheduledDeparture: flight.departure?.scheduled,
+                scheduledArrival: flight.arrival?.scheduled,
+                flightStatus: flight.flight_status,
+                aircraft: flight.aircraft?.registration,
+                duration,
+              },
+            ],
             transfers: [],
             totalDuration: duration,
           };
@@ -840,11 +873,24 @@ export class RoutingService {
       }
 
       // No direct flight found, try to find connecting flights via major hubs
-      const majorHubs = ['JFK', 'LAX', 'ORD', 'LHR', 'CDG', 'FRA', 'DXB', 'HND', 'SIN', 'SYD', 'GRU', 'JNB'];
-      
+      const majorHubs = [
+        'JFK',
+        'LAX',
+        'ORD',
+        'LHR',
+        'CDG',
+        'FRA',
+        'DXB',
+        'HND',
+        'SIN',
+        'SYD',
+        'GRU',
+        'JNB',
+      ];
+
       // Find hubs that are reasonable connections
-      const connectionHubs = majorHubs.filter(hub => 
-        hub !== departureAirport.iata && hub !== arrivalAirport.iata
+      const connectionHubs = majorHubs.filter(
+        (hub) => hub !== departureAirport.iata && hub !== arrivalAirport.iata,
       );
 
       let bestConnection: {
@@ -879,15 +925,21 @@ export class RoutingService {
           const leg2 = leg2Data.data[0];
 
           // Calculate durations
-          let leg1Duration = this.calculateGreatCircleDistance(
-            { longitude: departureAirport.lng, latitude: departureAirport.lat },
-            { longitude: 0, latitude: 0 }, // Hub coordinates would be better, but using estimate
-          ) / 250 + 3600;
+          let leg1Duration =
+            this.calculateGreatCircleDistance(
+              { longitude: departureAirport.lng, latitude: departureAirport.lat },
+              { longitude: 0, latitude: 0 }, // Hub coordinates would be better, but using estimate
+            ) /
+              250 +
+            3600;
 
-          let leg2Duration = this.calculateGreatCircleDistance(
-            { longitude: 0, latitude: 0 },
-            { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
-          ) / 250 + 3600;
+          let leg2Duration =
+            this.calculateGreatCircleDistance(
+              { longitude: 0, latitude: 0 },
+              { longitude: arrivalAirport.lng, latitude: arrivalAirport.lat },
+            ) /
+              250 +
+            3600;
 
           if (leg1.departure?.scheduled && leg1.arrival?.scheduled) {
             const depTime = new Date(leg1.departure.scheduled).getTime();
@@ -943,11 +995,13 @@ export class RoutingService {
                   duration: leg2Duration,
                 },
               ],
-              transfers: [{
-                airport: leg1.arrival?.airport || `${hub} Airport`,
-                airportIata: hub,
-                layoverDuration,
-              }],
+              transfers: [
+                {
+                  airport: leg1.arrival?.airport || `${hub} Airport`,
+                  airportIata: hub,
+                  layoverDuration,
+                },
+              ],
               totalDuration,
             };
           }
@@ -970,13 +1024,15 @@ export class RoutingService {
       const duration = distance / flightSpeedMps + 3600;
 
       return {
-        segments: [{
-          departureAirport: departureAirport.name,
-          departureIata: departureAirport.iata,
-          arrivalAirport: arrivalAirport.name,
-          arrivalIata: arrivalAirport.iata,
-          duration,
-        }],
+        segments: [
+          {
+            departureAirport: departureAirport.name,
+            departureIata: departureAirport.iata,
+            arrivalAirport: arrivalAirport.name,
+            arrivalIata: arrivalAirport.iata,
+            duration,
+          },
+        ],
         transfers: [],
         totalDuration: duration,
       };
@@ -991,13 +1047,15 @@ export class RoutingService {
       const duration = distance / flightSpeedMps + 3600;
 
       return {
-        segments: [{
-          departureAirport: departureAirport.name,
-          departureIata: departureAirport.iata,
-          arrivalAirport: arrivalAirport.name,
-          arrivalIata: arrivalAirport.iata,
-          duration,
-        }],
+        segments: [
+          {
+            departureAirport: departureAirport.name,
+            departureIata: departureAirport.iata,
+            arrivalAirport: arrivalAirport.name,
+            arrivalIata: arrivalAirport.iata,
+            duration,
+          },
+        ],
         transfers: [],
         totalDuration: duration,
       };
@@ -1037,7 +1095,7 @@ export class RoutingService {
 
       // Search for flights between these airports
       const url = `${this.aviationStackApiUrl}/flights?access_key=${this.aviationStackApiKey}&dep_iata=${depAirport.iata}&arr_iata=${arrAirport.iata}&limit=1`;
-      
+
       const response = await firstValueFrom(this.httpService.get(url));
       const data = response.data;
 
@@ -1060,14 +1118,17 @@ export class RoutingService {
           scheduledArrival: '',
           flightStatus: 'estimated',
           aircraft: '',
-          duration: this.calculateGreatCircleDistance(departure.coordinates, arrival.coordinates) / 250 + 3600,
+          duration:
+            this.calculateGreatCircleDistance(departure.coordinates, arrival.coordinates) / 250 +
+            3600,
         };
       }
 
       const flight = data.data[0];
-      
+
       // Calculate duration from scheduled times if available
-      let duration = this.calculateGreatCircleDistance(departure.coordinates, arrival.coordinates) / 250 + 3600;
+      let duration =
+        this.calculateGreatCircleDistance(departure.coordinates, arrival.coordinates) / 250 + 3600;
       if (flight.departure?.scheduled && flight.arrival?.scheduled) {
         const depTime = new Date(flight.departure.scheduled).getTime();
         const arrTime = new Date(flight.arrival.scheduled).getTime();
@@ -1125,21 +1186,28 @@ export class RoutingService {
     // 3. Validate flight segments are logical
     if (route.flightInfo) {
       const flightDistance = this.calculateGreatCircleDistance(
-        { longitude: route.flightInfo.departureLng || 0, latitude: route.flightInfo.departureLat || 0 },
+        {
+          longitude: route.flightInfo.departureLng || 0,
+          latitude: route.flightInfo.departureLat || 0,
+        },
         { longitude: route.flightInfo.arrivalLng || 0, latitude: route.flightInfo.arrivalLat || 0 },
       );
-      
+
       // Flight should be significant distance (at least 100km)
       if (flightDistance < 100000) {
         return {
           valid: false,
-          reason: 'Invalid route: Flight segment is too short. Ground transport may be more appropriate.',
+          reason:
+            'Invalid route: Flight segment is too short. Ground transport may be more appropriate.',
         };
       }
     }
 
     // 4. Check total distance sanity (should be reasonable compared to direct distance)
-    const directDistance = this.calculateGreatCircleDistance(origin.coordinates, destination.coordinates);
+    const directDistance = this.calculateGreatCircleDistance(
+      origin.coordinates,
+      destination.coordinates,
+    );
     const routeDistance = route.distance;
     const detourRatio = routeDistance / directDistance;
 
@@ -1189,9 +1257,10 @@ export class RoutingService {
   /**
    * Get country code from coordinates using reverse geocoding
    */
-  private async getCountryFromCoordinates(
-    coordinates: { longitude: number; latitude: number },
-  ): Promise<string | null> {
+  private async getCountryFromCoordinates(coordinates: {
+    longitude: number;
+    latitude: number;
+  }): Promise<string | null> {
     try {
       const results = await this.geocodingService.reverseGeocode(coordinates, 1);
       if (results && results.length > 0) {
@@ -1220,13 +1289,13 @@ export class RoutingService {
   ): Promise<boolean> {
     const country1 = await this.getCountryFromCoordinates(coord1);
     const country2 = await this.getCountryFromCoordinates(coord2);
-    
+
     if (!country1 || !country2) {
       // If we can't determine country, assume they're in the same country if close
       const distance = this.calculateGreatCircleDistance(coord1, coord2);
       return distance < 500000; // Within 500km, likely same country
     }
-    
+
     return country1 === country2;
   }
 
@@ -1249,7 +1318,7 @@ export class RoutingService {
 
     try {
       const searchRadiusMeters = searchRadiusKm * 1000;
-      
+
       // Try to get airports from AviationStack API
       // Note: AviationStack free tier has limited endpoints, so we'll use pagination
       let allAirports: any[] = [];
@@ -1259,17 +1328,17 @@ export class RoutingService {
 
       for (let page = 0; page < maxPages; page++) {
         const url = `${this.aviationStackApiUrl}/airports?access_key=${this.aviationStackApiKey}&limit=${limit}&offset=${offset}`;
-        
-        try {
-      const response = await firstValueFrom(this.httpService.get(url));
-      const data = response.data;
 
-      if (data.error || !data.data || data.data.length === 0) {
+        try {
+          const response = await firstValueFrom(this.httpService.get(url));
+          const data = response.data;
+
+          if (data.error || !data.data || data.data.length === 0) {
             break;
           }
 
           allAirports = allAirports.concat(data.data);
-          
+
           // If we got fewer results than the limit, we've reached the end
           if (data.data.length < limit) {
             break;
@@ -1286,7 +1355,10 @@ export class RoutingService {
       if (allAirports.length === 0) {
         const fallback = await this.getFallbackAirport(coordinates, requiredCountry || undefined);
         if (fallback) {
-          this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
+          this.airportCache.set(cacheKey, {
+            airport: fallback,
+            expires: Date.now() + this.airportCacheTTL,
+          });
         }
         return fallback;
       }
@@ -1298,7 +1370,13 @@ export class RoutingService {
       }
 
       // Filter and find nearest viable commercial airport within radius AND same country
-      let nearestAirport: { iata: string; name: string; lat: number; lng: number; country?: string } | null = null;
+      let nearestAirport: {
+        iata: string;
+        name: string;
+        lat: number;
+        lng: number;
+        country?: string;
+      } | null = null;
       let minDistance = Infinity;
 
       // First pass: Collect all airports within radius with country info
@@ -1311,15 +1389,15 @@ export class RoutingService {
 
       for (const airport of allAirports) {
         if (!airport.latitude || !airport.longitude || !airport.iata_code) continue;
-        
+
         // Skip airports without IATA codes (not commercial)
         if (!airport.iata_code || airport.iata_code.length !== 3) continue;
-        
+
         const airportCoords = {
           longitude: parseFloat(airport.longitude),
           latitude: parseFloat(airport.latitude),
         };
-        
+
         const distance = this.calculateGreatCircleDistance(coordinates, airportCoords);
 
         // Only consider airports within search radius
@@ -1327,7 +1405,7 @@ export class RoutingService {
 
         // Get airport country
         const airportCountry = await this.getCountryFromCoordinates(airportCoords);
-        
+
         airportsInRadius.push({
           airport,
           coords: airportCoords,
@@ -1351,7 +1429,8 @@ export class RoutingService {
           minDistance = item.distance;
           nearestAirport = {
             iata: item.airport.iata_code,
-            name: item.airport.airport_name || item.airport.name || `${item.airport.iata_code} Airport`,
+            name:
+              item.airport.airport_name || item.airport.name || `${item.airport.iata_code} Airport`,
             lat: item.coords.latitude,
             lng: item.coords.longitude,
             country: item.country || undefined,
@@ -1375,13 +1454,19 @@ export class RoutingService {
         // Final fallback (only if no country requirement)
         const fallback = await this.getFallbackAirport(coordinates, requiredCountry || undefined);
         if (fallback) {
-          this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
+          this.airportCache.set(cacheKey, {
+            airport: fallback,
+            expires: Date.now() + this.airportCacheTTL,
+          });
         }
         return fallback;
       }
 
       // Cache the result
-      this.airportCache.set(cacheKey, { airport: nearestAirport, expires: Date.now() + this.airportCacheTTL });
+      this.airportCache.set(cacheKey, {
+        airport: nearestAirport,
+        expires: Date.now() + this.airportCacheTTL,
+      });
 
       return nearestAirport;
     } catch (error) {
@@ -1392,7 +1477,10 @@ export class RoutingService {
       }
       const fallback = await this.getFallbackAirport(coordinates, requiredCountry || undefined);
       if (fallback) {
-        this.airportCache.set(cacheKey, { airport: fallback, expires: Date.now() + this.airportCacheTTL });
+        this.airportCache.set(cacheKey, {
+          airport: fallback,
+          expires: Date.now() + this.airportCacheTTL,
+        });
       }
       return fallback;
     }
@@ -1409,24 +1497,48 @@ export class RoutingService {
     // Major airports by region with country codes
     const majorAirports = [
       // North America
-      { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781, country: 'us' },
-      { iata: 'LAX', name: 'Los Angeles International', lat: 33.9425, lng: -118.4081, country: 'us' },
-      { iata: 'ORD', name: 'Chicago O\'Hare International', lat: 41.9742, lng: -87.9073, country: 'us' },
+      {
+        iata: 'JFK',
+        name: 'John F. Kennedy International',
+        lat: 40.6413,
+        lng: -73.7781,
+        country: 'us',
+      },
+      {
+        iata: 'LAX',
+        name: 'Los Angeles International',
+        lat: 33.9425,
+        lng: -118.4081,
+        country: 'us',
+      },
+      {
+        iata: 'ORD',
+        name: "Chicago O'Hare International",
+        lat: 41.9742,
+        lng: -87.9073,
+        country: 'us',
+      },
       { iata: 'YYZ', name: 'Toronto Pearson', lat: 43.6772, lng: -79.6306, country: 'ca' },
-      { iata: 'MEX', name: 'Mexico City International', lat: 19.4363, lng: -99.0721, country: 'mx' },
-      
+      {
+        iata: 'MEX',
+        name: 'Mexico City International',
+        lat: 19.4363,
+        lng: -99.0721,
+        country: 'mx',
+      },
+
       // Europe
-      { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543, country: 'gb' },
+      { iata: 'LHR', name: 'London Heathrow', lat: 51.47, lng: -0.4543, country: 'gb' },
       { iata: 'CDG', name: 'Paris Charles de Gaulle', lat: 49.0097, lng: 2.5479, country: 'fr' },
       { iata: 'FRA', name: 'Frankfurt Airport', lat: 50.0379, lng: 8.5622, country: 'de' },
       { iata: 'AMS', name: 'Amsterdam Schiphol', lat: 52.3105, lng: 4.7683, country: 'nl' },
-      { iata: 'MAD', name: 'Madrid Barajas', lat: 40.4839, lng: -3.5680, country: 'es' },
+      { iata: 'MAD', name: 'Madrid Barajas', lat: 40.4839, lng: -3.568, country: 'es' },
       { iata: 'FCO', name: 'Rome Fiumicino', lat: 41.8003, lng: 12.2389, country: 'it' },
-      
+
       // Middle East
       { iata: 'DXB', name: 'Dubai International', lat: 25.2532, lng: 55.3657, country: 'ae' },
       { iata: 'DOH', name: 'Doha Hamad International', lat: 25.2731, lng: 51.6081, country: 'qa' },
-      
+
       // Asia
       { iata: 'HND', name: 'Tokyo Haneda', lat: 35.5494, lng: 139.7798, country: 'jp' },
       { iata: 'PEK', name: 'Beijing Capital', lat: 40.0801, lng: 116.5849, country: 'cn' },
@@ -1434,18 +1546,18 @@ export class RoutingService {
       { iata: 'SIN', name: 'Singapore Changi', lat: 1.3644, lng: 103.9915, country: 'sg' },
       { iata: 'BKK', name: 'Bangkok Suvarnabhumi', lat: 13.6811, lng: 100.7475, country: 'th' },
       { iata: 'ICN', name: 'Seoul Incheon', lat: 37.4602, lng: 126.4407, country: 'kr' },
-      { iata: 'DEL', name: 'Delhi Indira Gandhi', lat: 28.5562, lng: 77.1000, country: 'in' },
-      
+      { iata: 'DEL', name: 'Delhi Indira Gandhi', lat: 28.5562, lng: 77.1, country: 'in' },
+
       // Oceania
       { iata: 'SYD', name: 'Sydney Airport', lat: -33.9399, lng: 151.1753, country: 'au' },
-      { iata: 'AKL', name: 'Auckland Airport', lat: -37.0082, lng: 174.7850, country: 'nz' },
-      
+      { iata: 'AKL', name: 'Auckland Airport', lat: -37.0082, lng: 174.785, country: 'nz' },
+
       // South America
       { iata: 'GRU', name: 'São Paulo Guarulhos', lat: -23.4356, lng: -46.4731, country: 'br' },
       { iata: 'EZE', name: 'Buenos Aires Ezeiza', lat: -34.8222, lng: -58.5358, country: 'ar' },
-      
+
       // Africa
-      { iata: 'JNB', name: 'Johannesburg O.R. Tambo', lat: -26.1392, lng: 28.2460, country: 'za' },
+      { iata: 'JNB', name: 'Johannesburg O.R. Tambo', lat: -26.1392, lng: 28.246, country: 'za' },
       { iata: 'CAI', name: 'Cairo International', lat: 30.1219, lng: 31.4056, country: 'eg' },
       { iata: 'CMN', name: 'Casablanca Mohammed V', lat: 33.3675, lng: -7.5898, country: 'ma' },
       { iata: 'TNR', name: 'Antananarivo Ivato', lat: -18.7969, lng: 47.4788, country: 'mg' }, // Madagascar
@@ -1455,8 +1567,10 @@ export class RoutingService {
     // If country is required, filter to same-country airports first
     let candidateAirports = majorAirports;
     if (requiredCountry) {
-      candidateAirports = majorAirports.filter(ap => ap.country === requiredCountry.toLowerCase());
-      
+      candidateAirports = majorAirports.filter(
+        (ap) => ap.country === requiredCountry.toLowerCase(),
+      );
+
       // If no airports found for required country, try to get country from coordinates
       if (candidateAirports.length === 0) {
         const detectedCountry = await this.getCountryFromCoordinates(coordinates);
@@ -1474,10 +1588,10 @@ export class RoutingService {
     let minDistance = Infinity;
 
     for (const airport of candidateAirports) {
-      const distance = this.calculateGreatCircleDistance(
-        coordinates,
-        { longitude: airport.lng, latitude: airport.lat },
-      );
+      const distance = this.calculateGreatCircleDistance(coordinates, {
+        longitude: airport.lng,
+        latitude: airport.lat,
+      });
 
       if (distance < minDistance) {
         minDistance = distance;
@@ -1566,8 +1680,7 @@ export class RoutingService {
     const lon2 = (end.longitude * Math.PI) / 180;
 
     const d = Math.acos(
-      Math.sin(lat1) * Math.sin(lat2) +
-        Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1),
+      Math.sin(lat1) * Math.sin(lat2) + Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1),
     );
 
     if (d === 0) {
@@ -1577,10 +1690,8 @@ export class RoutingService {
     const a = Math.sin((1 - fraction) * d) / Math.sin(d);
     const b = Math.sin(fraction * d) / Math.sin(d);
 
-    const x =
-      a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
-    const y =
-      a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
+    const x = a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
+    const y = a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
     const z = a * Math.sin(lat1) + b * Math.sin(lat2);
 
     const lat = Math.atan2(z, Math.sqrt(x * x + y * y));
@@ -1592,10 +1703,7 @@ export class RoutingService {
     };
   }
 
-  private transformMapboxResponse(
-    mapboxData: any,
-    waypoints: RouteWaypoint[],
-  ): RoutingResponse {
+  private transformMapboxResponse(mapboxData: any, waypoints: RouteWaypoint[]): RoutingResponse {
     const routes: Route[] = mapboxData.routes.map((route: any) => ({
       distance: route.distance,
       duration: route.duration,
@@ -1608,29 +1716,30 @@ export class RoutingService {
       legs: route.legs.map((leg: any) => ({
         distance: leg.distance,
         duration: leg.duration,
-        steps: leg.steps?.map((step: any) => ({
-          distance: step.distance,
-          duration: step.duration,
-          instruction: step.maneuver.instruction || step.maneuver.type,
-          maneuver: {
-            type: step.maneuver.type,
-            modifier: step.maneuver.modifier,
-            bearing_after: step.maneuver.bearing_after,
-            bearing_before: step.maneuver.bearing_before,
-            location: {
-              longitude: step.maneuver.location[0],
-              latitude: step.maneuver.location[1],
+        steps:
+          leg.steps?.map((step: any) => ({
+            distance: step.distance,
+            duration: step.duration,
+            instruction: step.maneuver.instruction || step.maneuver.type,
+            maneuver: {
+              type: step.maneuver.type,
+              modifier: step.maneuver.modifier,
+              bearing_after: step.maneuver.bearing_after,
+              bearing_before: step.maneuver.bearing_before,
+              location: {
+                longitude: step.maneuver.location[0],
+                latitude: step.maneuver.location[1],
+              },
             },
-          },
-          geometry: step.geometry
-            ? {
-                coordinates: step.geometry.coordinates.map((coord: [number, number]) => ({
-                  longitude: coord[0],
-                  latitude: coord[1],
-                })),
-              }
-            : undefined,
-        })) || [],
+            geometry: step.geometry
+              ? {
+                  coordinates: step.geometry.coordinates.map((coord: [number, number]) => ({
+                    longitude: coord[0],
+                    latitude: coord[1],
+                  })),
+                }
+              : undefined,
+          })) || [],
       })),
       weight: route.weight,
       weightName: route.weight_name,
@@ -1649,4 +1758,3 @@ export class RoutingService {
     };
   }
 }
-

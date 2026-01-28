@@ -11,4 +11,3 @@ import { CheckIn } from './entities/check-in.entity';
   exports: [CheckInsService],
 })
 export class CheckInsModule {}
-

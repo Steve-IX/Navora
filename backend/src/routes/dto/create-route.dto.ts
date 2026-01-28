@@ -25,4 +25,3 @@ export class CreateRouteDto {
   @IsNotEmpty()
   mode: string;
 }
-

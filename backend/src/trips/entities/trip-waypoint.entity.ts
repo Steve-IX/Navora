@@ -51,4 +51,3 @@ export class TripWaypoint {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
-

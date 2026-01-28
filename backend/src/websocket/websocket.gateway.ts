@@ -223,14 +223,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     });
   }
 
-  private async broadcastToFriends(
-    userId: string,
-    event: string,
-    data: any,
-  ): Promise<void> {
+  private async broadcastToFriends(userId: string, event: string, data: any): Promise<void> {
     // Get all friends
     const friends = await this.friendsService.getFriends(userId);
-    
+
     // Broadcast to each friend's sockets
     friends.forEach((friend) => {
       const friendSockets = this.userSockets.get(friend.friend.id);

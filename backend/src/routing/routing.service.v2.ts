@@ -143,10 +143,10 @@ export class RoutingServiceV2 {
     const allCoordinates: Array<{ longitude: number; latitude: number }> = [];
 
     // 1. Origin to departure airport
-    const toAirport = await this.calculateGroundSegment(
-      origin.coordinates,
-      { longitude: depAirport.lng, latitude: depAirport.lat },
-    );
+    const toAirport = await this.calculateGroundSegment(origin.coordinates, {
+      longitude: depAirport.lng,
+      latitude: depAirport.lat,
+    });
     if (toAirport) {
       legs.push({
         ...toAirport,
@@ -164,7 +164,7 @@ export class RoutingServiceV2 {
       { longitude: arrAirport.lng, latitude: arrAirport.lat },
     );
     const flightDuration = this.estimateFlightTime(flightDistance);
-    
+
     const flightGeometry = this.generateFlightPath(
       { longitude: depAirport.lng, latitude: depAirport.lat },
       { longitude: arrAirport.lng, latitude: arrAirport.lat },
@@ -174,16 +174,18 @@ export class RoutingServiceV2 {
       distance: flightDistance,
       duration: flightDuration,
       geometry: flightGeometry,
-      steps: [{
-        distance: flightDistance,
-        duration: flightDuration,
-        instruction: `Flight from ${depAirport.name} (${depAirport.iata}) to ${arrAirport.name} (${arrAirport.iata})`,
-        maneuver: {
-          type: 'depart',
-          location: { longitude: depAirport.lng, latitude: depAirport.lat },
+      steps: [
+        {
+          distance: flightDistance,
+          duration: flightDuration,
+          instruction: `Flight from ${depAirport.name} (${depAirport.iata}) to ${arrAirport.name} (${arrAirport.iata})`,
+          maneuver: {
+            type: 'depart',
+            location: { longitude: depAirport.lng, latitude: depAirport.lat },
+          },
+          transportMode: 'flight',
         },
-        transportMode: 'flight',
-      }],
+      ],
       transportMode: 'flight',
       modeLabel: `Flight ${depAirport.iata} → ${arrAirport.iata}`,
     });
@@ -245,14 +247,17 @@ export class RoutingServiceV2 {
     countryCode: string | null,
   ): Promise<{ iata: string; name: string; lat: number; lng: number } | null> {
     // Major airports by country
-    const airportsByCountry: Record<string, Array<{ iata: string; name: string; lat: number; lng: number }>> = {
+    const airportsByCountry: Record<
+      string,
+      Array<{ iata: string; name: string; lat: number; lng: number }>
+    > = {
       us: [
         { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781 },
         { iata: 'LAX', name: 'Los Angeles International', lat: 33.9425, lng: -118.4081 },
         { iata: 'ORD', name: "Chicago O'Hare International", lat: 41.9742, lng: -87.9073 },
       ],
       gb: [
-        { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543 },
+        { iata: 'LHR', name: 'London Heathrow', lat: 51.47, lng: -0.4543 },
         { iata: 'LGW', name: 'London Gatwick', lat: 51.1537, lng: -0.1821 },
       ],
       fr: [
@@ -267,16 +272,14 @@ export class RoutingServiceV2 {
         { iata: 'WAW', name: 'Warsaw Chopin', lat: 52.1657, lng: 20.9671 },
         { iata: 'KRK', name: 'Kraków John Paul II', lat: 50.0777, lng: 19.7848 },
       ],
-      mg: [
-        { iata: 'TNR', name: 'Antananarivo Ivato', lat: -18.7969, lng: 47.4788 },
-      ],
+      mg: [{ iata: 'TNR', name: 'Antananarivo Ivato', lat: -18.7969, lng: 47.4788 }],
       cn: [
         { iata: 'PEK', name: 'Beijing Capital', lat: 40.0801, lng: 116.5849 },
         { iata: 'PVG', name: 'Shanghai Pudong', lat: 31.1434, lng: 121.8052 },
       ],
       jp: [
         { iata: 'HND', name: 'Tokyo Haneda', lat: 35.5494, lng: 139.7798 },
-        { iata: 'NRT', name: 'Tokyo Narita', lat: 35.7720, lng: 140.3929 },
+        { iata: 'NRT', name: 'Tokyo Narita', lat: 35.772, lng: 140.3929 },
       ],
       // Add more countries as needed
     };
@@ -287,18 +290,18 @@ export class RoutingServiceV2 {
       // Find closest airport in that country
       let closest = airports[0];
       let minDist = Infinity;
-      
+
       for (const airport of airports) {
-        const dist = this.calculateDistance(
-          coordinates,
-          { longitude: airport.lng, latitude: airport.lat },
-        );
+        const dist = this.calculateDistance(coordinates, {
+          longitude: airport.lng,
+          latitude: airport.lat,
+        });
         if (dist < minDist) {
           minDist = dist;
           closest = airport;
         }
       }
-      
+
       // Only return if within reasonable distance (500km)
       if (minDist < 500000) {
         return closest;
@@ -308,7 +311,7 @@ export class RoutingServiceV2 {
     // Fallback: use global major airports
     const globalAirports = [
       { iata: 'JFK', name: 'John F. Kennedy International', lat: 40.6413, lng: -73.7781 },
-      { iata: 'LHR', name: 'London Heathrow', lat: 51.4700, lng: -0.4543 },
+      { iata: 'LHR', name: 'London Heathrow', lat: 51.47, lng: -0.4543 },
       { iata: 'CDG', name: 'Paris Charles de Gaulle', lat: 49.0097, lng: 2.5479 },
       { iata: 'FRA', name: 'Frankfurt Airport', lat: 50.0379, lng: 8.5622 },
       { iata: 'DXB', name: 'Dubai International', lat: 25.2532, lng: 55.3657 },
@@ -319,10 +322,10 @@ export class RoutingServiceV2 {
     let closest = globalAirports[0];
     let minDist = Infinity;
     for (const airport of globalAirports) {
-      const dist = this.calculateDistance(
-        coordinates,
-        { longitude: airport.lng, latitude: airport.lat },
-      );
+      const dist = this.calculateDistance(coordinates, {
+        longitude: airport.lng,
+        latitude: airport.lat,
+      });
       if (dist < minDist) {
         minDist = dist;
         closest = airport;
@@ -352,10 +355,10 @@ export class RoutingServiceV2 {
     try {
       const coordinates = `${from.longitude},${from.latitude};${to.longitude},${to.latitude}`;
       const url = `${this.mapboxApiUrl}/mapbox/driving/${coordinates}?access_token=${this.mapboxAccessToken}&geometries=geojson&overview=full`;
-      
+
       const response = await firstValueFrom(this.httpService.get(url));
       const route = response.data.routes[0];
-      
+
       return {
         distance: route.distance,
         duration: route.duration,
@@ -377,7 +380,10 @@ export class RoutingServiceV2 {
   /**
    * Get country code from coordinates
    */
-  private async getCountry(coordinates: { longitude: number; latitude: number }): Promise<string | null> {
+  private async getCountry(coordinates: {
+    longitude: number;
+    latitude: number;
+  }): Promise<string | null> {
     try {
       const results = await this.geocodingService.reverseGeocode(coordinates, 1);
       if (results && results.length > 0 && results[0].context) {
@@ -431,35 +437,34 @@ export class RoutingServiceV2 {
   ): Array<{ longitude: number; latitude: number }> {
     const points: Array<{ longitude: number; latitude: number }> = [];
     const numPoints = 20;
-    
+
     for (let i = 0; i <= numPoints; i++) {
       const fraction = i / numPoints;
       const lat1 = (from.latitude * Math.PI) / 180;
       const lat2 = (to.latitude * Math.PI) / 180;
       const lon1 = (from.longitude * Math.PI) / 180;
       const lon2 = (to.longitude * Math.PI) / 180;
-      
+
       const d = Math.acos(
-        Math.sin(lat1) * Math.sin(lat2) +
-        Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1),
+        Math.sin(lat1) * Math.sin(lat2) + Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1),
       );
-      
+
       const a = Math.sin((1 - fraction) * d) / Math.sin(d);
       const b = Math.sin(fraction * d) / Math.sin(d);
-      
+
       const x = a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
       const y = a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
       const z = a * Math.sin(lat1) + b * Math.sin(lat2);
-      
+
       const lat = Math.atan2(z, Math.sqrt(x * x + y * y));
       const lon = Math.atan2(y, x);
-      
+
       points.push({
         latitude: (lat * 180) / Math.PI,
         longitude: (lon * 180) / Math.PI,
       });
     }
-    
+
     return points;
   }
 
@@ -482,7 +487,10 @@ export class RoutingServiceV2 {
         isNaN(wp.coordinates.latitude) ||
         isNaN(wp.coordinates.longitude)
       ) {
-        throw new HttpException(`Waypoint ${i + 1} has invalid coordinates`, HttpStatus.BAD_REQUEST);
+        throw new HttpException(
+          `Waypoint ${i + 1} has invalid coordinates`,
+          HttpStatus.BAD_REQUEST,
+        );
       }
     }
   }
@@ -539,10 +547,12 @@ export class RoutingServiceV2 {
       code: mapboxData.code || 'Ok',
       routes,
       waypoints: mapboxData.waypoints.map((wp: any, index: number) => ({
-        location: waypoints[index]?.coordinates || { longitude: wp.location[0], latitude: wp.location[1] },
+        location: waypoints[index]?.coordinates || {
+          longitude: wp.location[0],
+          latitude: wp.location[1],
+        },
         name: waypoints[index]?.name,
       })),
     };
   }
 }
-

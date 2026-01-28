@@ -61,4 +61,3 @@ export class GroupTrip {
   @OneToMany(() => TripWaypoint, (waypoint) => waypoint.trip)
   waypoints: TripWaypoint[];
 }
-

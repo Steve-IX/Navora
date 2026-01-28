@@ -13,14 +13,12 @@ import {
   NormalizedPosition,
   OpenSkyResponse,
   OpenSkyStateVector,
-  OpenSkyTokenResponse,
 } from './types';
 
 // Cache TTLs in milliseconds
 const LIVE_CACHE_TTL_MS = 15 * 1000; // 15 seconds - OpenSky updates every 5-10 seconds
 const DETAILS_CACHE_TTL_MS = 60 * 1000; // 1 minute for flight details
 const RATE_LIMIT_CACHE_TTL_MS = 60 * 1000; // Cache rate limit errors for 60s
-const TOKEN_CACHE_TTL_MS = 55 * 60 * 1000; // Cache token for 55 minutes (tokens last 1 hour)
 
 // Unit conversion constants
 const METERS_TO_FEET = 3.28084;
@@ -45,30 +43,29 @@ const SQUAWK = 14;
 @Injectable()
 export class FlightawareService {
   private readonly logger = new Logger(FlightawareService.name);
-  private readonly openSkyClientId: string;
-  private readonly openSkyClientSecret: string;
+  private readonly openSkyUsername: string;
+  private readonly openSkyPassword: string;
   private readonly openSkyBaseUrl = 'https://opensky-network.org/api';
-  private readonly openSkyAuthUrl = 'https://opensky-network.org/api/auth';
+  private readonly hasCredentials: boolean;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    this.openSkyClientId = this.configService.get<string>('OPENSKY_CLIENT_ID') || '';
-    this.openSkyClientSecret = this.configService.get<string>('OPENSKY_CLIENT_SECRET') || '';
+    // OpenSky uses basic auth (username/password), not OAuth2
+    this.openSkyUsername = this.configService.get<string>('OPENSKY_USERNAME') || '';
+    this.openSkyPassword = this.configService.get<string>('OPENSKY_PASSWORD') || '';
+    this.hasCredentials = !!(this.openSkyUsername && this.openSkyPassword);
 
-    if (!this.openSkyClientId || !this.openSkyClientSecret) {
-      this.logger.warn('OpenSky credentials not configured - flight tracking disabled');
+    if (!this.hasCredentials) {
+      this.logger.log('OpenSky credentials not configured - using unauthenticated API (rate limited)');
     } else {
-      this.logger.log('OpenSky API configured successfully');
+      this.logger.log('OpenSky API configured with authentication');
     }
   }
 
   async getLiveFlights(query: LiveFlightsQuery): Promise<LiveFlightsResponse> {
-    if (!this.openSkyClientId || !this.openSkyClientSecret) {
-      throw new HttpException('Flight tracking API not configured', HttpStatus.SERVICE_UNAVAILABLE);
-    }
 
     const cacheKey = this.buildLiveCacheKey(query);
     const cached = await this.cacheManager.get<LiveFlightsResponse>(cacheKey);
@@ -104,9 +101,6 @@ export class FlightawareService {
   }
 
   async getFlightDetails(flightId: string): Promise<FlightDetailsResponse> {
-    if (!this.openSkyClientId || !this.openSkyClientSecret) {
-      throw new HttpException('Flight tracking API not configured', HttpStatus.SERVICE_UNAVAILABLE);
-    }
 
     const cacheKey = `flights:details:${flightId}`;
     const cached = await this.cacheManager.get<FlightDetailsResponse>(cacheKey);
@@ -141,53 +135,21 @@ export class FlightawareService {
     }
   }
 
-  private async getAccessToken(): Promise<string> {
-    const tokenCacheKey = 'opensky:access_token';
-    const cachedToken = await this.cacheManager.get<string>(tokenCacheKey);
-
-    if (cachedToken) {
-      return cachedToken;
+  private getAuthHeaders(): Record<string, string> {
+    if (!this.hasCredentials) {
+      return {};
     }
 
-    try {
-      this.logger.debug('Fetching new OpenSky access token...');
-
-      const response = await firstValueFrom(
-        this.httpService.post<OpenSkyTokenResponse>(
-          `${this.openSkyAuthUrl}/token`,
-          new URLSearchParams({
-            grant_type: 'client_credentials',
-            client_id: this.openSkyClientId,
-            client_secret: this.openSkyClientSecret,
-          }).toString(),
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-          },
-        ),
-      );
-
-      const token = response.data.access_token;
-      const expiresIn = response.data.expires_in || 3600;
-
-      // Cache token for slightly less than its expiry time
-      const cacheTtl = Math.min((expiresIn - 300) * 1000, TOKEN_CACHE_TTL_MS);
-      await this.cacheManager.set(tokenCacheKey, token, cacheTtl);
-
-      this.logger.log('OpenSky access token obtained successfully');
-      return token;
-    } catch (error: any) {
-      this.logger.error(`Failed to obtain OpenSky access token: ${this.errorMessage(error)}`);
-      throw new HttpException('Failed to authenticate with flight API', HttpStatus.UNAUTHORIZED);
-    }
+    // OpenSky uses HTTP Basic Authentication
+    const credentials = Buffer.from(`${this.openSkyUsername}:${this.openSkyPassword}`).toString('base64');
+    return {
+      Authorization: `Basic ${credentials}`,
+    };
   }
 
   private async fetchLiveFlightsFromOpenSky(query: LiveFlightsQuery): Promise<LiveFlightsResponse> {
     const { bbox, region, max } = query;
     const bounds = this.resolveBounds(region, bbox);
-
-    const token = await this.getAccessToken();
 
     // Build query parameters for OpenSky
     const params: Record<string, any> = {};
@@ -208,9 +170,7 @@ export class FlightawareService {
       const response = await firstValueFrom(
         this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
           params,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: this.getAuthHeaders(),
         }),
       );
 
@@ -223,9 +183,7 @@ export class FlightawareService {
           this.logger.warn('No flights in bounds, fetching global flights...');
           const globalResponse = await firstValueFrom(
             this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
+              headers: this.getAuthHeaders(),
             }),
           );
           const globalStates = globalResponse.data.states || [];
@@ -272,10 +230,13 @@ export class FlightawareService {
         source: 'opensky',
       };
     } catch (error: any) {
-      if (error?.response?.status === 401) {
-        // Token might be expired, clear cache and retry once
-        await this.cacheManager.del('opensky:access_token');
-        this.logger.warn('OpenSky token expired, retrying with fresh token...');
+      // Handle rate limiting and auth errors gracefully
+      if (error?.response?.status === 429) {
+        this.logger.warn('OpenSky API rate limit exceeded');
+        throw error;
+      }
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        this.logger.warn('OpenSky API authentication failed - check credentials');
         throw error;
       }
       throw error;
@@ -284,7 +245,6 @@ export class FlightawareService {
 
   private async fetchFlightDetailsFromOpenSky(flightId: string): Promise<FlightDetailsResponse> {
     // OpenSky uses ICAO24 addresses, so flightId should be the icao24 or callsign
-    const token = await this.getAccessToken();
 
     try {
       // Try to find the aircraft by icao24 address
@@ -300,9 +260,7 @@ export class FlightawareService {
       const response = await firstValueFrom(
         this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
           params: Object.keys(params).length > 0 ? params : undefined,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: this.getAuthHeaders(),
         }),
       );
 
@@ -358,8 +316,14 @@ export class FlightawareService {
         source: 'opensky',
       };
     } catch (error: any) {
-      if (error?.response?.status === 401) {
-        await this.cacheManager.del('opensky:access_token');
+      // Handle rate limiting and auth errors gracefully
+      if (error?.response?.status === 429) {
+        this.logger.warn('OpenSky API rate limit exceeded');
+        throw error;
+      }
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        this.logger.warn('OpenSky API authentication failed - check credentials');
+        throw error;
       }
       throw error;
     }

@@ -66,9 +66,10 @@ export class PlacesController {
   async searchPlaces(@Query() dto: SearchPlacesDto) {
     return this.placesService.searchPlaces(dto.query, {
       category: dto.category,
-      coordinates: dto.longitude && dto.latitude
-        ? { longitude: dto.longitude, latitude: dto.latitude }
-        : undefined,
+      coordinates:
+        dto.longitude && dto.latitude
+          ? { longitude: dto.longitude, latitude: dto.latitude }
+          : undefined,
       limit: dto.limit,
     });
   }
@@ -91,4 +92,3 @@ export class PlacesController {
     return this.placesService.getPlaceDetails(id);
   }
 }
-

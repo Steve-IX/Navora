@@ -48,4 +48,3 @@ export class RoutesService {
     await this.routesRepository.remove(route);
   }
 }
-

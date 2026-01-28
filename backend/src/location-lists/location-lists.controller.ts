@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  Param,
-  UseGuards,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { LocationListsService } from './location-lists.service';
 import { CreateListDto } from './dto/create-list.dto';
@@ -55,4 +46,3 @@ export class LocationListsController {
     return { message: 'List deleted' };
   }
 }
-

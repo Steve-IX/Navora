@@ -11,4 +11,3 @@ import { RouteHistory } from './entities/route-history.entity';
   exports: [RoutesService],
 })
 export class RoutesModule {}
-

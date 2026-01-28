@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Body, UseGuards, Request, NotFoundException, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Body,
+  UseGuards,
+  Request,
+  NotFoundException,
+  Param,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ProfilesService } from './profiles.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -28,4 +37,3 @@ export class ProfilesController {
     return profile;
   }
 }
-

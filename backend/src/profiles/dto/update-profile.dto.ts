@@ -23,4 +23,3 @@ export class UpdateProfileDto {
   @IsBoolean()
   shareWithFriendsOnly?: boolean;
 }
-

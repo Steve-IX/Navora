@@ -41,4 +41,3 @@ export class SharedLocationList {
   @OneToMany(() => LocationListItem, (item) => item.list, { cascade: true })
   items: LocationListItem[];
 }
-

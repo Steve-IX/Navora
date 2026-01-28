@@ -13,7 +13,12 @@
       "Bash(git push:*)",
       "Bash(npm run lint:*)",
       "Bash(findstr:*)",
-      "Bash(xargs ls:*)"
+      "Bash(xargs ls:*)",
+      "WebFetch(domain:www.weatherapi.com)",
+      "WebSearch",
+      "Bash(dir:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:openskynetwork.github.io)"
     ]
   }
 }
