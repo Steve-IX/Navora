@@ -98,6 +98,16 @@ export interface FlightDetailsResponse {
   source: 'opensky' | 'cache';
 }
 
+// OpenSky flights API types (used to enrich origin/destination)
+export interface OpenSkyFlight {
+  icao24: string;
+  firstSeen: number;
+  estDepartureAirport: string | null;
+  lastSeen: number;
+  estArrivalAirport: string | null;
+  callsign: string | null;
+}
+
 // OpenSky API types
 // State vector is returned as an array with indexed fields:
 // [0]: icao24 - ICAO 24-bit address (hex string)

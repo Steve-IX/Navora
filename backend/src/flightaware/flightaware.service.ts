@@ -8,11 +8,13 @@ import {
   FlightDetailsResponse,
   LiveFlightsQuery,
   LiveFlightsResponse,
+  NormalizedAirport,
   NormalizedFlightDetails,
   NormalizedFlightSummary,
   NormalizedPosition,
   OpenSkyResponse,
   OpenSkyStateVector,
+  OpenSkyFlight,
 } from './types';
 
 // Cache TTLs in milliseconds
@@ -407,9 +409,26 @@ export class FlightawareService {
         };
       }
 
+      // Try to enrich with estimated origin/destination using OpenSky flights API
+      let originAirport: NormalizedAirport | undefined;
+      let destinationAirport: NormalizedAirport | undefined;
+      try {
+        const icao24 = matchingState[ICAO24];
+        const lastContact = matchingState[LAST_CONTACT] as number;
+        const routeInfo = await this.fetchFlightRouteFromOpenSky(icao24.toLowerCase(), lastContact);
+        originAirport = routeInfo.origin;
+        destinationAirport = routeInfo.destination;
+      } catch (routeError) {
+        this.logger.warn(
+          `Failed to enhance flight details with origin/destination: ${this.errorMessage(routeError)}`,
+        );
+      }
+
       // Convert to details format
       const details: NormalizedFlightDetails = {
         ...normalizedFlight,
+        origin: originAirport ?? normalizedFlight.origin,
+        destination: destinationAirport ?? normalizedFlight.destination,
         aircraft: {
           registration: undefined,
           type: undefined,
@@ -497,6 +516,96 @@ export class FlightawareService {
       
       throw error;
     }
+  }
+
+  /**
+   * Best-effort enrichment of origin/destination using OpenSky flights API.
+   * This is only called for individual flight details to avoid exhausting rate limits.
+   */
+  private async fetchFlightRouteFromOpenSky(
+    icao24: string,
+    referenceTime: number,
+  ): Promise<{ origin?: NormalizedAirport; destination?: NormalizedAirport }> {
+    const end = Math.max(referenceTime, Math.floor(Date.now() / 1000));
+    const begin = end - 6 * 60 * 60; // look back 6 hours
+
+    const params: Record<string, any> = {
+      icao24: icao24.toLowerCase(),
+      begin,
+      end,
+    };
+
+    const fetchFlights = async (useAuth: boolean): Promise<OpenSkyFlight[]> => {
+      const config: any = { params };
+      if (useAuth) {
+        config.headers = await this.getAuthHeaders();
+      }
+      const response = await firstValueFrom(
+        this.httpService.get<OpenSkyFlight[]>(`${this.openSkyBaseUrl}/flights/aircraft`, config),
+      );
+      return response.data || [];
+    };
+
+    try {
+      // Try with auth first (if we have credentials)
+      let flights: OpenSkyFlight[] = [];
+      if (this.hasOAuthCredentials || this.hasBasicAuthCredentials) {
+        try {
+          flights = await fetchFlights(true);
+        } catch (authError: any) {
+          if (authError?.response?.status === 401 || authError?.response?.status === 403) {
+            this.logger.warn('OpenSky flights/aircraft auth failed - retrying anonymously');
+            flights = await fetchFlights(false);
+          } else {
+            throw authError;
+          }
+        }
+      } else {
+        flights = await fetchFlights(false);
+      }
+
+      if (!flights.length) {
+        return {};
+      }
+
+      // Pick the flight whose time window best matches the reference time
+      let best: OpenSkyFlight | null = null;
+      let bestScore = Number.POSITIVE_INFINITY;
+
+      for (const flight of flights) {
+        const inWindow = flight.firstSeen <= referenceTime && referenceTime <= flight.lastSeen;
+        const distance = Math.abs(referenceTime - flight.lastSeen);
+        const score = inWindow ? distance : distance + 3600; // favour flights that contain the reference time
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = flight;
+        }
+      }
+
+      if (!best) {
+        return {};
+      }
+
+      const origin = this.mapAirportCodeToNormalized(best.estDepartureAirport);
+      const destination = this.mapAirportCodeToNormalized(best.estArrivalAirport);
+
+      return { origin, destination };
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to fetch origin/destination from OpenSky flights API: ${this.errorMessage(error)}`,
+      );
+      return {};
+    }
+  }
+
+  private mapAirportCodeToNormalized(code: string | null): NormalizedAirport | undefined {
+    if (!code) return undefined;
+    return {
+      code,
+      icao: code,
+      name: code,
+    };
   }
 
   private normalizeStateVector(state: OpenSkyStateVector): NormalizedFlightSummary | null {
