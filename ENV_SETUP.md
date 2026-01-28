@@ -27,8 +27,9 @@ JWT_EXPIRES_IN=7d
 # Mapbox Configuration
 MAPBOX_ACCESS_TOKEN=your-mapbox-access-token-here
 
-# AviationStack API Configuration (for flight routing)
-AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
+# OpenSky Network API Configuration (for live flight tracking)
+OPENSKY_CLIENT_ID=your-opensky-client-id-here
+OPENSKY_CLIENT_SECRET=your-opensky-client-secret-here
 
 # WeatherAPI Configuration (for weather data)
 WEATHERAPI_KEY=your-weatherapi-key-here
@@ -36,7 +37,6 @@ WEATHERAPI_KEY=your-weatherapi-key-here
 # Frontend Environment Variables
 VITE_API_URL=http://localhost:3000
 VITE_MAPBOX_TOKEN=your-mapbox-access-token-here
-VITE_AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
 VITE_WEATHERAPI_KEY=your-weatherapi-key-here
 ```
 
@@ -65,8 +65,9 @@ JWT_EXPIRES_IN=7d
 # Mapbox Configuration
 MAPBOX_ACCESS_TOKEN=your-mapbox-access-token-here
 
-# AviationStack API Configuration (for flight routing)
-AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
+# OpenSky Network API Configuration (for live flight tracking)
+OPENSKY_CLIENT_ID=your-opensky-client-id-here
+OPENSKY_CLIENT_SECRET=your-opensky-client-secret-here
 
 # WeatherAPI Configuration (for weather data)
 WEATHERAPI_KEY=your-weatherapi-key-here
@@ -83,9 +84,6 @@ VITE_API_URL=http://localhost:3000
 # Mapbox Configuration
 VITE_MAPBOX_TOKEN=your-mapbox-access-token-here
 
-# AviationStack API Configuration (for flight routing)
-VITE_AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
-
 # WeatherAPI Configuration (for weather data)
 VITE_WEATHERAPI_KEY=your-weatherapi-key-here
 ```
@@ -96,11 +94,14 @@ VITE_WEATHERAPI_KEY=your-weatherapi-key-here
 2. Go to your account page and create an access token
 3. Copy the token and use it for both `MAPBOX_ACCESS_TOKEN` and `VITE_MAPBOX_TOKEN`
 
-## Getting an AviationStack API Key
+## Getting OpenSky Network API Credentials
 
-1. Sign up for a free account at [AviationStack](https://aviationstack.com/)
-2. Go to your dashboard and copy your API access key
-3. Use the token for `AVIATIONSTACK_API_KEY` and `VITE_AVIATIONSTACK_API_KEY`
+1. Sign up for an account at [OpenSky Network](https://opensky-network.org/)
+2. Go to your account settings and create an API client
+3. Copy the Client ID and Client Secret
+4. Use them for `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET`
+
+Note: OpenSky uses OAuth2 Client Credentials flow for authentication. The backend handles token management automatically.
 
 ## Getting a WeatherAPI Key
 
@@ -113,7 +114,6 @@ VITE_WEATHERAPI_KEY=your-weatherapi-key-here
 - **Never commit `.env` files to version control**
 - Use strong, unique `JWT_SECRET` values in production
 - Keep your Mapbox access token secure
-- Keep your AviationStack API key secure
+- Keep your OpenSky API credentials secure
 - Keep your WeatherAPI key secure
 - Rotate secrets regularly in production environments
-

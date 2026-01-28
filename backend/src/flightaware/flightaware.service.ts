@@ -8,42 +8,65 @@ import {
   FlightDetailsResponse,
   LiveFlightsQuery,
   LiveFlightsResponse,
-  NormalizedAirport,
   NormalizedFlightDetails,
   NormalizedFlightSummary,
-  NormalizedOperator,
   NormalizedPosition,
+  OpenSkyResponse,
+  OpenSkyStateVector,
+  OpenSkyTokenResponse,
 } from './types';
 
-// Cache TTLs in milliseconds (cache-manager v5+ uses ms)
-const LIVE_CACHE_TTL_MS = 60 * 1000; // 60 seconds - respect API rate limits
-const DETAILS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes for flight details
-const RATE_LIMIT_CACHE_TTL_MS = 60 * 1000; // Cache rate limit errors for 60s (AviationStack has stricter limits)
+// Cache TTLs in milliseconds
+const LIVE_CACHE_TTL_MS = 15 * 1000; // 15 seconds - OpenSky updates every 5-10 seconds
+const DETAILS_CACHE_TTL_MS = 60 * 1000; // 1 minute for flight details
+const RATE_LIMIT_CACHE_TTL_MS = 60 * 1000; // Cache rate limit errors for 60s
+const TOKEN_CACHE_TTL_MS = 55 * 60 * 1000; // Cache token for 55 minutes (tokens last 1 hour)
 
-type AviationStackResponse = Record<string, any>;
+// Unit conversion constants
+const METERS_TO_FEET = 3.28084;
+const MS_TO_KNOTS = 1.94384;
+
+// OpenSky state vector array indices
+const ICAO24 = 0;
+const CALLSIGN = 1;
+const ORIGIN_COUNTRY = 2;
+const TIME_POSITION = 3;
+const LAST_CONTACT = 4;
+const LONGITUDE = 5;
+const LATITUDE = 6;
+const BARO_ALTITUDE = 7;
+const ON_GROUND = 8;
+const VELOCITY = 9;
+const TRUE_TRACK = 10;
+const VERTICAL_RATE = 11;
+const GEO_ALTITUDE = 13;
+const SQUAWK = 14;
 
 @Injectable()
 export class FlightawareService {
   private readonly logger = new Logger(FlightawareService.name);
-  private readonly aviationStackApiKey: string;
+  private readonly openSkyClientId: string;
+  private readonly openSkyClientSecret: string;
+  private readonly openSkyBaseUrl = 'https://opensky-network.org/api';
+  private readonly openSkyAuthUrl = 'https://opensky-network.org/api/auth';
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    this.aviationStackApiKey = 
-      this.configService.get<string>('AVIATIONSTACK_KEY') ||
-      this.configService.get<string>('AVIATIONSTACK_API_KEY') ||
-      '';
-    
-    if (!this.aviationStackApiKey) {
-      this.logger.warn('AVIATIONSTACK_KEY not configured - flight tracking disabled');
+    this.openSkyClientId = this.configService.get<string>('OPENSKY_CLIENT_ID') || '';
+    this.openSkyClientSecret = this.configService.get<string>('OPENSKY_CLIENT_SECRET') || '';
+
+    if (!this.openSkyClientId || !this.openSkyClientSecret) {
+      this.logger.warn('OpenSky credentials not configured - flight tracking disabled');
+    } else {
+      this.logger.log('OpenSky API configured successfully');
     }
   }
 
   async getLiveFlights(query: LiveFlightsQuery): Promise<LiveFlightsResponse> {
-    if (!this.aviationStackApiKey) {
+    if (!this.openSkyClientId || !this.openSkyClientSecret) {
       throw new HttpException('Flight tracking API not configured', HttpStatus.SERVICE_UNAVAILABLE);
     }
 
@@ -62,11 +85,10 @@ export class FlightawareService {
     }
 
     try {
-      const response = await this.fetchLiveFlightsFromAviationStack(query);
+      const response = await this.fetchLiveFlightsFromOpenSky(query);
       await this.cacheManager.set(cacheKey, response, LIVE_CACHE_TTL_MS);
       return response;
     } catch (error: any) {
-      // If rate limited, set cooldown to prevent hammering the API
       if (error?.status === 429 || error?.response?.status === 429) {
         await this.cacheManager.set(rateLimitKey, true, RATE_LIMIT_CACHE_TTL_MS);
       }
@@ -82,7 +104,7 @@ export class FlightawareService {
   }
 
   async getFlightDetails(flightId: string): Promise<FlightDetailsResponse> {
-    if (!this.aviationStackApiKey) {
+    if (!this.openSkyClientId || !this.openSkyClientSecret) {
       throw new HttpException('Flight tracking API not configured', HttpStatus.SERVICE_UNAVAILABLE);
     }
 
@@ -101,11 +123,10 @@ export class FlightawareService {
     }
 
     try {
-      const response = await this.fetchFlightDetailsFromAviationStack(flightId);
+      const response = await this.fetchFlightDetailsFromOpenSky(flightId);
       await this.cacheManager.set(cacheKey, response, DETAILS_CACHE_TTL_MS);
       return response;
     } catch (error: any) {
-      // If rate limited, set cooldown to prevent hammering the API
       if (error?.status === 429 || error?.response?.status === 429) {
         await this.cacheManager.set(rateLimitKey, true, RATE_LIMIT_CACHE_TTL_MS);
       }
@@ -120,433 +141,292 @@ export class FlightawareService {
     }
   }
 
-  private async fetchLiveFlightsFromAviationStack(
-    query: LiveFlightsQuery,
-  ): Promise<LiveFlightsResponse> {
+  private async getAccessToken(): Promise<string> {
+    const tokenCacheKey = 'opensky:access_token';
+    const cachedToken = await this.cacheManager.get<string>(tokenCacheKey);
+
+    if (cachedToken) {
+      return cachedToken;
+    }
+
+    try {
+      this.logger.debug('Fetching new OpenSky access token...');
+
+      const response = await firstValueFrom(
+        this.httpService.post<OpenSkyTokenResponse>(
+          `${this.openSkyAuthUrl}/token`,
+          new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: this.openSkyClientId,
+            client_secret: this.openSkyClientSecret,
+          }).toString(),
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+          },
+        ),
+      );
+
+      const token = response.data.access_token;
+      const expiresIn = response.data.expires_in || 3600;
+
+      // Cache token for slightly less than its expiry time
+      const cacheTtl = Math.min((expiresIn - 300) * 1000, TOKEN_CACHE_TTL_MS);
+      await this.cacheManager.set(tokenCacheKey, token, cacheTtl);
+
+      this.logger.log('OpenSky access token obtained successfully');
+      return token;
+    } catch (error: any) {
+      this.logger.error(`Failed to obtain OpenSky access token: ${this.errorMessage(error)}`);
+      throw new HttpException('Failed to authenticate with flight API', HttpStatus.UNAUTHORIZED);
+    }
+  }
+
+  private async fetchLiveFlightsFromOpenSky(query: LiveFlightsQuery): Promise<LiveFlightsResponse> {
     const { bbox, region, max } = query;
     const bounds = this.resolveBounds(region, bbox);
 
-    // Try to fetch as many flights as possible
-    // Professional plans support up to 1000 per request
-    // Free/Basic plans support up to 100 per request
-    let entries: any[] = [];
-    let allEntries: any[] = [];
-    
-    // First, try requesting 1000 flights (for Professional plans)
-    const baseParams: Record<string, any> = {
-      access_key: this.aviationStackApiKey,
-      flight_status: 'active',
-    };
+    const token = await this.getAccessToken();
 
-    // Add optional filters
-    if (query.airline) {
-      if (query.airline.length === 2) {
-        baseParams.airline_iata = query.airline.toUpperCase();
-      } else if (query.airline.length === 3) {
-        baseParams.airline_icao = query.airline.toUpperCase();
-      }
+    // Build query parameters for OpenSky
+    const params: Record<string, any> = {};
+
+    // Add bounding box parameters if not global
+    if (bounds.minLat > -90 || bounds.maxLat < 90 || bounds.minLon > -180 || bounds.maxLon < 180) {
+      params.lamin = bounds.minLat;
+      params.lamax = bounds.maxLat;
+      params.lomin = bounds.minLon;
+      params.lomax = bounds.maxLon;
     }
+
+    this.logger.debug(
+      `OpenSky query params: lamin=${params.lamin}, lamax=${params.lamax}, lomin=${params.lomin}, lomax=${params.lomax}`,
+    );
 
     try {
-      // Try 1000 flights first (Professional plan)
-      const params1000 = { ...baseParams, limit: 1000 };
-      this.logger.debug(`AviationStack query params: ${JSON.stringify({ ...params1000, access_key: '[REDACTED]' })}`);
-      this.logger.log(`AviationStack query: flight_status=active, limit=1000 (attempting Professional plan)`);
+      const response = await firstValueFrom(
+        this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
+          params,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+      );
 
-      const response1000 = await this.aviationStackGet<AviationStackResponse>('/flights', params1000);
-      allEntries = response1000?.data ?? [];
-      
-      // If we got less than 100, API likely capped us (free/basic plan)
-      // In that case, use pagination to get more
-      if (allEntries.length > 0 && allEntries.length < 100) {
-        // Got some results but hit a limit - use pagination
-        this.logger.log(`AviationStack returned ${allEntries.length} flights (likely hit limit). Using pagination to fetch more...`);
-        
-        // Fetch 3 more pages (total 4 pages = up to 400 flights for free/basic)
-        for (let page = 1; page <= 3; page++) {
-          const offset = allEntries.length * page;
-          const paramsPage = { ...baseParams, limit: 100, offset };
-          this.logger.debug(`Fetching page ${page + 1} with offset ${offset}`);
-          
-          try {
-            const responsePage = await this.aviationStackGet<AviationStackResponse>('/flights', paramsPage);
-            const pageEntries = responsePage?.data ?? [];
-            if (pageEntries.length > 0) {
-              allEntries.push(...pageEntries);
-              this.logger.log(`Page ${page + 1}: Added ${pageEntries.length} flights (total: ${allEntries.length})`);
-            } else {
-              break; // No more results
-            }
-          } catch (error) {
-            this.logger.warn(`Failed to fetch page ${page + 1}: ${error.message}`);
-            break; // Stop pagination on error
-          }
+      const states = response.data.states || [];
+      this.logger.log(`OpenSky returned ${states.length} aircraft state vectors`);
+
+      if (states.length === 0) {
+        // If no flights in bounds, try fetching without bounds (global)
+        if (Object.keys(params).length > 0) {
+          this.logger.warn('No flights in bounds, fetching global flights...');
+          const globalResponse = await firstValueFrom(
+            this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }),
+          );
+          const globalStates = globalResponse.data.states || [];
+          this.logger.log(`OpenSky global query returned ${globalStates.length} aircraft`);
+
+          const normalizedFlights = globalStates
+            .map((state) => this.normalizeStateVector(state))
+            .filter((flight): flight is NormalizedFlightSummary => flight !== null)
+            .filter((flight) => this.applyPostFilters(flight, query))
+            .slice(0, max ?? 200);
+
+          return {
+            region: region ?? 'global',
+            updatedAt: new Date().toISOString(),
+            flights: normalizedFlights,
+            stale: false,
+            source: 'opensky',
+          };
         }
-      } else if (allEntries.length >= 100 && allEntries.length < 1000) {
-        // Got 100-999 flights, might be more available - try one more page
-        const paramsPage = { ...baseParams, limit: 100, offset: 100 };
-        try {
-          const responsePage = await this.aviationStackGet<AviationStackResponse>('/flights', paramsPage);
-          const pageEntries = responsePage?.data ?? [];
-          if (pageEntries.length > 0) {
-            allEntries.push(...pageEntries);
-            this.logger.log(`Page 2: Added ${pageEntries.length} flights (total: ${allEntries.length})`);
-          }
-        } catch (error) {
-          // Ignore - single page is fine
-        }
+
+        return {
+          region: region ?? 'global',
+          updatedAt: new Date().toISOString(),
+          flights: [],
+          stale: false,
+          source: 'opensky',
+        };
       }
-    } catch (error) {
-      // If 1000 fails, fall back to 100 (free/basic plan)
-      this.logger.warn(`Request for 1000 flights failed, falling back to 100: ${error.message}`);
-      
-      const params100 = { ...baseParams, limit: 100 };
-      this.logger.debug(`AviationStack query params: ${JSON.stringify({ ...params100, access_key: '[REDACTED]' })}`);
-      this.logger.log(`AviationStack query: flight_status=active, limit=100`);
 
-      const response100 = await this.aviationStackGet<AviationStackResponse>('/flights', params100);
-      allEntries = response100?.data ?? [];
-      
-      // For free/basic plans, try pagination to get more flights
-      if (allEntries.length === 100) {
-        this.logger.log(`Got exactly 100 flights (likely plan limit). Fetching additional pages...`);
-        
-        // Fetch 4 more pages (total 5 pages = up to 500 flights)
-        for (let page = 1; page <= 4; page++) {
-          const offset = 100 * page;
-          const paramsPage = { ...baseParams, limit: 100, offset };
-          this.logger.debug(`Fetching page ${page + 1} with offset ${offset}`);
-          
-          try {
-            const responsePage = await this.aviationStackGet<AviationStackResponse>('/flights', paramsPage);
-            const pageEntries = responsePage?.data ?? [];
-            if (pageEntries.length > 0) {
-              allEntries.push(...pageEntries);
-              this.logger.log(`Page ${page + 1}: Added ${pageEntries.length} flights (total: ${allEntries.length})`);
-            } else {
-              break; // No more results
-            }
-          } catch (error) {
-            this.logger.warn(`Failed to fetch page ${page + 1}: ${error.message}`);
-            break; // Stop pagination on error (may hit rate limit)
-          }
-        }
-      }
-    }
+      // Normalize and filter flights
+      const normalizedFlights = states
+        .map((state) => this.normalizeStateVector(state))
+        .filter((flight): flight is NormalizedFlightSummary => flight !== null)
+        .filter((flight) => this.applyPostFilters(flight, query))
+        .slice(0, max ?? 200);
 
-    entries = allEntries;
-    this.logger.log(`AviationStack returned ${entries.length} total flight entries (aggregated from multiple pages)`);
-    
-    if (entries.length === 0) {
-      this.logger.warn('AviationStack returned no flight entries - API may be rate-limited or no active flights found');
+      this.logger.log(`Returning ${normalizedFlights.length} flights after filtering`);
+
       return {
         region: region ?? 'global',
         updatedAt: new Date().toISOString(),
-        flights: [],
+        flights: normalizedFlights,
         stale: false,
-        source: 'aviationstack',
+        source: 'opensky',
       };
-    }
-    
-    // Log sample entry structure for debugging (first entry only, limited fields)
-    if (entries.length > 0) {
-      const sample = entries[0];
-      this.logger.debug(`Sample entry: has live=${!!sample.live}, has airline=${!!sample.airline}, flight_status=${sample.flight_status}`);
-      if (sample.live) {
-        this.logger.debug(`Sample live data: lat=${sample.live.latitude}, lon=${sample.live.longitude}`);
-      }
-    }
-    
-    let flightsWithPosition = 0;
-    let flightsFilteredByPostFilters = 0;
-    let flightsFilteredByBounds = 0;
-    
-    const normalizedFlights = entries.map((entry: any) => this.normalizeLiveFlight(entry));
-    const flightsWithPos = normalizedFlights.filter((flight: NormalizedFlightSummary) => {
-      if (!flight.position) {
-        return false;
-      }
-      flightsWithPosition++;
-      return true;
-    });
-    
-    // Log sample positions for debugging
-    if (flightsWithPos.length > 0) {
-      const sampleFlights = flightsWithPos.slice(0, 3);
-      this.logger.debug(`Sample flights with position: ${sampleFlights.map(f => 
-        `${f.callsign || f.id}: (${f.position?.latitude?.toFixed(2)}, ${f.position?.longitude?.toFixed(2)})`
-      ).join(', ')}`);
-    }
-    
-    this.logger.debug(`Using bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]`);
-    
-    // First, try to get flights within bounds
-    let flights = flightsWithPos
-      .filter((flight: NormalizedFlightSummary) => {
-        const passed = this.applyPostFilters(flight, query);
-        if (!passed) flightsFilteredByPostFilters++;
-        return passed;
-      })
-      .filter((flight: NormalizedFlightSummary) => {
-        const passed = this.filterByBounds(flight, bounds);
-        if (!passed && flight.position) {
-          flightsFilteredByBounds++;
-          // Log first few filtered positions for debugging
-          if (flightsFilteredByBounds <= 3) {
-            this.logger.debug(`Flight ${flight.callsign || flight.id} filtered by bounds: (${flight.position.latitude.toFixed(2)}, ${flight.position.longitude.toFixed(2)}) outside bounds`);
-          }
-        }
-        return passed;
-      })
-      .slice(0, max ?? 200);
-    
-    // If no flights found within bounds but we have flights with position data,
-    // fall back to returning ALL flights from anywhere (up to max limit)
-    // This allows users to track flights globally when local flights aren't available
-    if (flights.length === 0 && flightsWithPos.length > 0) {
-      this.logger.warn(`No flights found within bounds. Falling back to global flights with position data. ` +
-        `Bounds: lat [${bounds.minLat.toFixed(2)}, ${bounds.maxLat.toFixed(2)}], lon [${bounds.minLon.toFixed(2)}, ${bounds.maxLon.toFixed(2)}]`);
-      
-      // Return ALL flights with position data from anywhere (up to max limit)
-      // This ensures users can see live flights regardless of their viewing location
-      flights = flightsWithPos
-        .filter((flight: NormalizedFlightSummary) => this.applyPostFilters(flight, query))
-        .slice(0, max ?? 200); // Return up to max limit (typically 200-250)
-      
-      this.logger.log(`Returning ${flights.length} global flights with position data as fallback (max: ${max ?? 200})`);
-    }
-    
-    this.logger.log(`Filtered: ${flightsWithPosition}/${entries.length} flights have position data, ` +
-      `${flightsFilteredByPostFilters} filtered by post-filters, ${flightsFilteredByBounds} filtered by bounds, ` +
-      `${flights.length} remaining`);
-    
-    if (flightsWithPosition === 0 && entries.length > 0) {
-      this.logger.warn('AviationStack returned flights but none have live position data - check API plan includes live tracking');
-    }
-
-    return {
-      region: region ?? 'global',
-      updatedAt: new Date().toISOString(),
-      flights,
-      stale: false,
-      source: 'aviationstack',
-    };
-  }
-
-  private filterByBounds(
-    flight: NormalizedFlightSummary,
-    bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number },
-  ): boolean {
-    if (!flight.position) return false;
-    const { latitude, longitude } = flight.position;
-    
-    // Add a small buffer (0.1 degrees ≈ 11km) to account for map viewport edge cases
-    const buffer = 0.1;
-    
-    return (
-      latitude >= (bounds.minLat - buffer) &&
-      latitude <= (bounds.maxLat + buffer) &&
-      longitude >= (bounds.minLon - buffer) &&
-      longitude <= (bounds.maxLon + buffer)
-    );
-  }
-
-  private async fetchFlightDetailsFromAviationStack(
-    flightId: string,
-  ): Promise<FlightDetailsResponse> {
-    // flightId could be flight_iata (e.g., "AA123") or flight_icao (e.g., "AAL123")
-    const params: Record<string, any> = {
-      access_key: this.aviationStackApiKey,
-      limit: 1,
-    };
-
-    // Determine if it's IATA or ICAO format
-    if (flightId.length <= 6 && /^[A-Z]{2}\d+$/i.test(flightId)) {
-      params.flight_iata = flightId.toUpperCase();
-    } else {
-      params.flight_icao = flightId.toUpperCase();
-    }
-
-    const response = await this.aviationStackGet<AviationStackResponse>('/flights', params);
-    const entry = response?.data?.[0];
-    const normalized = entry ? this.normalizeFlightDetails(entry) : null;
-
-    return {
-      flight: normalized,
-      updatedAt: new Date().toISOString(),
-      stale: false,
-      source: 'aviationstack',
-    };
-  }
-
-  private async aviationStackGet<T>(path: string, params: Record<string, any>): Promise<T> {
-    const baseUrl = this.configService.get<string>('AVIATIONSTACK_BASE_URL') ?? 'https://api.aviationstack.com/v1';
-    const url = `${baseUrl}${path}`;
-    
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get<T>(url, { params }),
-      );
-      
-      // Check for API error in response body (AviationStack returns 200 with error object)
-      const data = response.data as any;
-      if (data?.error) {
-        this.logger.warn(`AviationStack API error: ${JSON.stringify(data.error)}`);
-        throw new HttpException(
-          data.error.info || 'AviationStack API error',
-          data.error.code === 'usage_limit_reached' ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_REQUEST,
-        );
-      }
-      
-      return response.data;
     } catch (error: any) {
-      if (error instanceof HttpException) {
+      if (error?.response?.status === 401) {
+        // Token might be expired, clear cache and retry once
+        await this.cacheManager.del('opensky:access_token');
+        this.logger.warn('OpenSky token expired, retrying with fresh token...');
         throw error;
-      }
-      const status = error?.response?.status;
-      const data = error?.response?.data;
-      if (status) {
-        this.logger.warn(
-          `Upstream request failed (${status}) ${url}: ${this.safeStringify(data)}`,
-        );
-        throw new HttpException(
-          {
-            message: data?.message ?? data?.error ?? 'Upstream request failed',
-            upstreamStatus: status,
-          },
-          status,
-        );
       }
       throw error;
     }
   }
 
-  private normalizeLiveFlight(entry: AviationStackResponse): NormalizedFlightSummary {
-    const position = this.normalizePosition(entry);
-    const origin = this.normalizeAirport(entry.departure);
-    const destination = this.normalizeAirport(entry.arrival);
-    const operator = this.normalizeOperator(entry);
+  private async fetchFlightDetailsFromOpenSky(flightId: string): Promise<FlightDetailsResponse> {
+    // OpenSky uses ICAO24 addresses, so flightId should be the icao24 or callsign
+    const token = await this.getAccessToken();
 
-    // Generate a unique ID from flight codes
-    const id = entry.flight?.iata || entry.flight?.icao || entry.flight?.number || 
-               `${entry.airline?.iata || 'XX'}${entry.flight?.number || Math.random().toString(36).substr(2, 6)}`;
+    try {
+      // Try to find the aircraft by icao24 address
+      const params: Record<string, string> = {};
 
-    return {
-      id,
-      callsign: entry.flight?.icao || entry.flight?.iata,
-      flightNumber: entry.flight?.iata || entry.flight?.icao,
-      operator,
-      origin,
-      destination,
-      position,
-      status: entry.flight_status,
-      lastUpdatedUtc: entry.live?.updated || new Date().toISOString(),
-    };
+      // If it looks like a callsign (has letters and numbers), search differently
+      // OpenSky doesn't support callsign filtering directly, so we fetch all and filter
+      if (/^[A-Fa-f0-9]{6}$/.test(flightId)) {
+        // Looks like an ICAO24 address
+        params.icao24 = flightId.toLowerCase();
+      }
+
+      const response = await firstValueFrom(
+        this.httpService.get<OpenSkyResponse>(`${this.openSkyBaseUrl}/states/all`, {
+          params: Object.keys(params).length > 0 ? params : undefined,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+      );
+
+      const states = response.data.states || [];
+
+      // Find the matching flight
+      let matchingState = states.find((state) => {
+        const icao24 = state[ICAO24];
+        const callsign = (state[CALLSIGN] || '').trim();
+        return (
+          icao24.toLowerCase() === flightId.toLowerCase() ||
+          callsign.toLowerCase() === flightId.toLowerCase()
+        );
+      });
+
+      if (!matchingState && states.length > 0) {
+        // If we filtered by icao24 and got a result, use it
+        matchingState = states[0];
+      }
+
+      if (!matchingState) {
+        return {
+          flight: null,
+          updatedAt: new Date().toISOString(),
+          stale: false,
+          source: 'opensky',
+        };
+      }
+
+      const normalizedFlight = this.normalizeStateVector(matchingState);
+      if (!normalizedFlight) {
+        return {
+          flight: null,
+          updatedAt: new Date().toISOString(),
+          stale: false,
+          source: 'opensky',
+        };
+      }
+
+      // Convert to details format
+      const details: NormalizedFlightDetails = {
+        ...normalizedFlight,
+        aircraft: {
+          registration: undefined,
+          type: undefined,
+        },
+      };
+
+      return {
+        flight: details,
+        updatedAt: new Date().toISOString(),
+        stale: false,
+        source: 'opensky',
+      };
+    } catch (error: any) {
+      if (error?.response?.status === 401) {
+        await this.cacheManager.del('opensky:access_token');
+      }
+      throw error;
+    }
   }
 
-  private normalizeFlightDetails(entry: AviationStackResponse): NormalizedFlightDetails {
-    const summary = this.normalizeLiveFlight(entry);
+  private normalizeStateVector(state: OpenSkyStateVector): NormalizedFlightSummary | null {
+    const icao24 = state[ICAO24];
+    const callsign = state[CALLSIGN] ? String(state[CALLSIGN]).trim() : null;
+    const originCountry = state[ORIGIN_COUNTRY];
+    const longitude = state[LONGITUDE];
+    const latitude = state[LATITUDE];
+    const baroAltitude = state[BARO_ALTITUDE];
+    const onGround = state[ON_GROUND];
+    const velocity = state[VELOCITY];
+    const trueTrack = state[TRUE_TRACK];
+    const geoAltitude = state[GEO_ALTITUDE];
+    const timePosition = state[TIME_POSITION];
+    const lastContact = state[LAST_CONTACT];
 
-    return {
-      ...summary,
-      gate: {
-        origin: entry.departure?.gate,
-        destination: entry.arrival?.gate,
-      },
-      terminal: {
-        origin: entry.departure?.terminal,
-        destination: entry.arrival?.terminal,
-      },
-      scheduled: {
-        off: entry.departure?.scheduled,
-        on: entry.arrival?.scheduled,
-      },
-      estimated: {
-        off: entry.departure?.estimated,
-        on: entry.arrival?.estimated,
-      },
-      actual: {
-        off: entry.departure?.actual,
-        on: entry.arrival?.actual,
-      },
-      aircraft: entry.aircraft
-        ? {
-            registration: entry.aircraft.registration,
-            type: entry.aircraft.iata || entry.aircraft.icao,
-          }
-        : undefined,
-    };
-  }
-
-  private normalizeOperator(entry: AviationStackResponse): NormalizedOperator | undefined {
-    const airline = entry.airline;
-    if (!airline) {
-      return undefined;
+    // Must have valid position
+    if (latitude === null || longitude === null) {
+      return null;
     }
 
-    return {
-      name: airline.name,
-      icao: airline.icao,
-      iata: airline.iata,
-      callsign: airline.callsign,
-    };
-  }
-
-  private normalizeAirport(entry?: AviationStackResponse): NormalizedAirport | undefined {
-    if (!entry) {
-      return undefined;
-    }
-
-    return {
-      code: entry.iata || entry.icao,
-      name: entry.airport,
-      iata: entry.iata,
-      icao: entry.icao,
-      city: undefined, // Not provided by AviationStack in this endpoint
-      country: undefined,
-      countryCode: undefined,
-      timezone: entry.timezone,
-      latitude: undefined,
-      longitude: undefined,
-    };
-  }
-
-  private normalizePosition(entry: AviationStackResponse): NormalizedPosition | undefined {
-    const live = entry.live;
-    
-    // AviationStack may not provide live data for all flights
-    // Check if live object exists and has valid coordinates
-    if (!live) {
-      return undefined;
-    }
-    
-    // Handle null/undefined values more carefully
-    const latitude = live.latitude;
-    const longitude = live.longitude;
-    
-    // Must have valid lat/lon to create position
-    if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
-      return undefined;
-    }
-    
-    // Validate lat/lon are valid numbers
-    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-      return undefined;
-    }
-    
-    // Validate lat/lon are within valid ranges
+    // Validate coordinates
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      return undefined;
+      return null;
     }
 
-    return {
+    // Use geo_altitude if available, otherwise baro_altitude
+    const altitudeMeters = geoAltitude ?? baroAltitude;
+    const altitudeFeet = altitudeMeters !== null ? Math.round(altitudeMeters * METERS_TO_FEET) : undefined;
+
+    // Convert velocity from m/s to knots
+    const speedKnots = velocity !== null ? Math.round(velocity * MS_TO_KNOTS) : undefined;
+
+    // Determine heading (true track in degrees)
+    const heading = trueTrack !== null ? Math.round(trueTrack) : undefined;
+
+    // Build position object
+    const position: NormalizedPosition = {
       latitude,
       longitude,
-      altitude: live.altitude !== null && live.altitude !== undefined ? live.altitude : undefined,
-      groundSpeed: live.speed_horizontal !== null && live.speed_horizontal !== undefined ? live.speed_horizontal : undefined,
-      heading: live.direction !== null && live.direction !== undefined ? live.direction : undefined,
-      isOnGround: live.is_ground ?? false,
-      timestamp: live.updated || new Date().toISOString(),
+      altitude: altitudeFeet,
+      groundSpeed: speedKnots,
+      heading,
+      isOnGround: onGround ?? false,
+      timestamp: timePosition
+        ? new Date(timePosition * 1000).toISOString()
+        : new Date(lastContact * 1000).toISOString(),
+    };
+
+    return {
+      id: icao24,
+      callsign: callsign || icao24.toUpperCase(),
+      flightNumber: callsign || undefined,
+      operator: {
+        name: originCountry,
+        icao: undefined,
+        iata: undefined,
+        callsign: undefined,
+      },
+      origin: undefined, // OpenSky doesn't provide origin/destination
+      destination: undefined,
+      position,
+      status: onGround ? 'ground' : 'airborne',
+      lastUpdatedUtc: position.timestamp,
     };
   }
 
@@ -558,7 +438,10 @@ export class FlightawareService {
       }
     }
 
-    const regionBounds: Record<string, { minLat: number; minLon: number; maxLat: number; maxLon: number }> = {
+    const regionBounds: Record<
+      string,
+      { minLat: number; minLon: number; maxLat: number; maxLon: number }
+    > = {
       UK_EU: { minLat: 34, minLon: -11, maxLat: 72, maxLon: 35 },
       AU: { minLat: -45, minLon: 110, maxLat: -10, maxLon: 155 },
       GLOBAL: { minLat: -90, minLon: -180, maxLat: 90, maxLon: 180 },
@@ -573,7 +456,7 @@ export class FlightawareService {
       return false;
     }
 
-    // Altitude filters
+    // Altitude filters (already converted to feet)
     if (query.minAltitude !== undefined && flight.position.altitude !== undefined) {
       if (flight.position.altitude < query.minAltitude) {
         return false;
@@ -585,7 +468,7 @@ export class FlightawareService {
       }
     }
 
-    // Speed filters
+    // Speed filters (already converted to knots)
     if (query.minSpeed !== undefined && flight.position.groundSpeed !== undefined) {
       if (flight.position.groundSpeed < query.minSpeed) {
         return false;
@@ -597,22 +480,12 @@ export class FlightawareService {
       }
     }
 
-    // Airline filter (if not already applied via API)
+    // Callsign/airline filter
     if (query.airline) {
       const airlineFilter = query.airline.toLowerCase();
+      const callsignMatch = flight.callsign?.toLowerCase().includes(airlineFilter);
       const operatorMatch = flight.operator?.name?.toLowerCase().includes(airlineFilter);
-      const iataMatch = flight.operator?.iata?.toLowerCase() === airlineFilter;
-      const icaoMatch = flight.operator?.icao?.toLowerCase() === airlineFilter;
-      if (!operatorMatch && !iataMatch && !icaoMatch) {
-        return false;
-      }
-    }
-
-    if (query.destinationCountry) {
-      const country = flight.destination?.country?.toLowerCase();
-      const countryCode = flight.destination?.countryCode?.toLowerCase();
-      const target = query.destinationCountry.toLowerCase();
-      if (country !== target && countryCode !== target) {
+      if (!callsignMatch && !operatorMatch) {
         return false;
       }
     }
@@ -629,7 +502,6 @@ export class FlightawareService {
       maxAltitude: query.maxAltitude ?? null,
       minSpeed: query.minSpeed ?? null,
       maxSpeed: query.maxSpeed ?? null,
-      destinationCountry: query.destinationCountry ?? null,
       max: query.max ?? null,
     })}`;
   }
@@ -639,13 +511,5 @@ export class FlightawareService {
       return error.message;
     }
     return String(error);
-  }
-
-  private safeStringify(data: unknown): string {
-    try {
-      return JSON.stringify(data);
-    } catch {
-      return String(data);
-    }
   }
 }

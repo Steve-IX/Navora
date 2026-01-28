@@ -76,12 +76,12 @@ export interface LiveFlightsResponse {
   updatedAt: string;
   flights: LiveFlightSummary[];
   stale: boolean;
-  source: 'aviationstack' | 'cache';
+  source: 'opensky' | 'cache';
 }
 
 export interface FlightDetailsResponse {
   flight: LiveFlightDetails | null;
   updatedAt: string;
   stale: boolean;
-  source: 'aviationstack' | 'cache';
+  source: 'opensky' | 'cache';
 }
