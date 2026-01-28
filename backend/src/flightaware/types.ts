@@ -99,6 +99,7 @@ export interface FlightDetailsResponse {
 }
 
 // OpenSky flights API types (used to enrich origin/destination)
+// Response format from /flights/all and /flights/aircraft
 export interface OpenSkyFlight {
   icao24: string;
   firstSeen: number;
@@ -106,6 +107,8 @@ export interface OpenSkyFlight {
   lastSeen: number;
   estArrivalAirport: string | null;
   callsign: string | null;
+  // Additional fields that may be present
+  [key: string]: any;
 }
 
 // OpenSky API types

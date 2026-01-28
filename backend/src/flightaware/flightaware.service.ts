@@ -415,11 +415,12 @@ export class FlightawareService {
       try {
         const icao24 = matchingState[ICAO24];
         const lastContact = matchingState[LAST_CONTACT] as number;
-        const routeInfo = await this.fetchFlightRouteFromOpenSky(icao24.toLowerCase(), lastContact);
+        const callsign = matchingState[CALLSIGN] ? String(matchingState[CALLSIGN]).trim() : null;
+        const routeInfo = await this.fetchFlightRouteFromOpenSky(icao24.toLowerCase(), lastContact, callsign);
         originAirport = routeInfo.origin;
         destinationAirport = routeInfo.destination;
       } catch (routeError) {
-        this.logger.warn(
+        this.logger.debug(
           `Failed to enhance flight details with origin/destination: ${this.errorMessage(routeError)}`,
         );
       }
@@ -494,8 +495,26 @@ export class FlightawareService {
             };
           }
 
+          // Try to enrich with estimated origin/destination using OpenSky flights API
+          let originAirport: NormalizedAirport | undefined;
+          let destinationAirport: NormalizedAirport | undefined;
+          try {
+            const icao24 = matchingState[ICAO24];
+            const lastContact = matchingState[LAST_CONTACT] as number;
+            const callsign = matchingState[CALLSIGN] ? String(matchingState[CALLSIGN]).trim() : null;
+            const routeInfo = await this.fetchFlightRouteFromOpenSky(icao24.toLowerCase(), lastContact, callsign);
+            originAirport = routeInfo.origin;
+            destinationAirport = routeInfo.destination;
+          } catch (routeError) {
+            this.logger.debug(
+              `Failed to enhance flight details with origin/destination (anonymous): ${this.errorMessage(routeError)}`,
+            );
+          }
+
           const details: NormalizedFlightDetails = {
             ...normalizedFlight,
+            origin: originAirport ?? normalizedFlight.origin,
+            destination: destinationAirport ?? normalizedFlight.destination,
             aircraft: {
               registration: undefined,
               type: undefined,
@@ -520,91 +539,311 @@ export class FlightawareService {
 
   /**
    * Best-effort enrichment of origin/destination using OpenSky flights API.
-   * This is only called for individual flight details to avoid exhausting rate limits.
+   * Note: /flights/aircraft only returns historical flights (previous day or earlier),
+   * so for live flights we try to infer from callsign patterns or use /flights/all.
    */
   private async fetchFlightRouteFromOpenSky(
     icao24: string,
     referenceTime: number,
+    callsign?: string | null,
   ): Promise<{ origin?: NormalizedAirport; destination?: NormalizedAirport }> {
-    const end = Math.max(referenceTime, Math.floor(Date.now() / 1000));
-    const begin = end - 6 * 60 * 60; // look back 6 hours
-
-    const params: Record<string, any> = {
-      icao24: icao24.toLowerCase(),
-      begin,
-      end,
-    };
-
-    const fetchFlights = async (useAuth: boolean): Promise<OpenSkyFlight[]> => {
-      const config: any = { params };
-      if (useAuth) {
-        config.headers = await this.getAuthHeaders();
+    // First, try to infer from callsign pattern (e.g., "UAL123" or "JFK123" -> JFK)
+    if (callsign) {
+      const inferred = this.inferAirportsFromCallsign(callsign);
+      if (inferred.origin || inferred.destination) {
+        this.logger.debug(`Inferred airports from callsign ${callsign}: ${inferred.origin?.iata || '?'} -> ${inferred.destination?.iata || '?'}`);
+        return inferred;
       }
-      const response = await firstValueFrom(
-        this.httpService.get<OpenSkyFlight[]>(`${this.openSkyBaseUrl}/flights/aircraft`, config),
-      );
-      return response.data || [];
-    };
+    }
 
+    // For historical flights, try /flights/aircraft (only works for previous day or earlier)
+    // Use yesterday's date range
+    const now = Math.floor(Date.now() / 1000);
+    const yesterday = now - 24 * 60 * 60;
+    const twoDaysAgo = yesterday - 24 * 60 * 60;
+
+    // Only try historical if reference time is more than 1 hour ago
+    if (referenceTime < now - 3600) {
+      try {
+        const params: Record<string, any> = {
+          icao24: icao24.toLowerCase(),
+          begin: Math.max(twoDaysAgo, referenceTime - 24 * 60 * 60),
+          end: Math.min(yesterday, referenceTime + 24 * 60 * 60),
+        };
+
+        const fetchFlights = async (useAuth: boolean): Promise<OpenSkyFlight[]> => {
+          const config: any = { params };
+          if (useAuth) {
+            config.headers = await this.getAuthHeaders();
+          }
+          try {
+            const response = await firstValueFrom(
+              this.httpService.get<any>(`${this.openSkyBaseUrl}/flights/aircraft`, config),
+            );
+            // OpenSky returns array directly or wrapped - handle both
+            const data = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+            return data as OpenSkyFlight[];
+          } catch (err: any) {
+            // 404 means no flights found - that's okay
+            if (err?.response?.status === 404) {
+              return [];
+            }
+            throw err;
+          }
+        };
+
+        let flights: OpenSkyFlight[] = [];
+        if (this.hasOAuthCredentials || this.hasBasicAuthCredentials) {
+          try {
+            flights = await fetchFlights(true);
+          } catch (authError: any) {
+            if (authError?.response?.status === 401 || authError?.response?.status === 403) {
+              this.logger.debug('OpenSky flights/aircraft auth failed - retrying anonymously');
+              flights = await fetchFlights(false);
+            } else {
+              throw authError;
+            }
+          }
+        } else {
+          flights = await fetchFlights(false);
+        }
+
+        if (flights.length > 0) {
+          // Pick the flight whose time window best matches the reference time
+          let best: OpenSkyFlight | null = null;
+          let bestScore = Number.POSITIVE_INFINITY;
+
+          for (const flight of flights) {
+            const inWindow = flight.firstSeen <= referenceTime && referenceTime <= flight.lastSeen;
+            const distance = Math.abs(referenceTime - flight.lastSeen);
+            const score = inWindow ? distance : distance + 3600;
+
+            if (score < bestScore) {
+              bestScore = score;
+              best = flight;
+            }
+          }
+
+          if (best && (best.estDepartureAirport || best.estArrivalAirport)) {
+            const origin = this.mapAirportCodeToNormalized(best.estDepartureAirport);
+            const destination = this.mapAirportCodeToNormalized(best.estArrivalAirport);
+            return { origin, destination };
+          }
+        }
+      } catch (error: any) {
+        this.logger.debug(
+          `Historical flight lookup failed: ${this.errorMessage(error)}`,
+        );
+      }
+    }
+
+    // For live flights, try /flights/all with recent time window
     try {
-      // Try with auth first (if we have credentials)
-      let flights: OpenSkyFlight[] = [];
+      const now = Math.floor(Date.now() / 1000);
+      const begin = now - 2 * 60 * 60; // Last 2 hours
+      const end = now;
+
+      const fetchRecentFlights = async (useAuth: boolean): Promise<any[]> => {
+        const config: any = { params: { begin, end } };
+        if (useAuth) {
+          config.headers = await this.getAuthHeaders();
+        }
+          try {
+            const response = await firstValueFrom(
+              this.httpService.get<any>(`${this.openSkyBaseUrl}/flights/all`, config),
+            );
+          const data = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+          return data as any[];
+        } catch (err: any) {
+          if (err?.response?.status === 404) {
+            return [];
+          }
+          throw err;
+        }
+      };
+
+      let flights: any[] = [];
       if (this.hasOAuthCredentials || this.hasBasicAuthCredentials) {
         try {
-          flights = await fetchFlights(true);
+          flights = await fetchRecentFlights(true);
         } catch (authError: any) {
           if (authError?.response?.status === 401 || authError?.response?.status === 403) {
-            this.logger.warn('OpenSky flights/aircraft auth failed - retrying anonymously');
-            flights = await fetchFlights(false);
+            flights = await fetchRecentFlights(false);
           } else {
             throw authError;
           }
         }
       } else {
-        flights = await fetchFlights(false);
+        flights = await fetchRecentFlights(false);
       }
 
-      if (!flights.length) {
-        return {};
-      }
+      // Find flight matching this aircraft's callsign or icao24
+      const matching = flights.find((f: any) => {
+        const fIcao = f.icao24?.toLowerCase();
+        const fCallsign = f.callsign?.trim().toUpperCase();
+        const searchCallsign = callsign?.trim().toUpperCase();
+        return (
+          fIcao === icao24.toLowerCase() ||
+          (searchCallsign && fCallsign === searchCallsign)
+        );
+      });
 
-      // Pick the flight whose time window best matches the reference time
-      let best: OpenSkyFlight | null = null;
-      let bestScore = Number.POSITIVE_INFINITY;
-
-      for (const flight of flights) {
-        const inWindow = flight.firstSeen <= referenceTime && referenceTime <= flight.lastSeen;
-        const distance = Math.abs(referenceTime - flight.lastSeen);
-        const score = inWindow ? distance : distance + 3600; // favour flights that contain the reference time
-
-        if (score < bestScore) {
-          bestScore = score;
-          best = flight;
+      if (matching) {
+        const origin = this.mapAirportCodeToNormalized(matching.estDepartureAirport);
+        const destination = this.mapAirportCodeToNormalized(matching.estArrivalAirport);
+        if (origin || destination) {
+          return { origin, destination };
         }
       }
-
-      if (!best) {
-        return {};
-      }
-
-      const origin = this.mapAirportCodeToNormalized(best.estDepartureAirport);
-      const destination = this.mapAirportCodeToNormalized(best.estArrivalAirport);
-
-      return { origin, destination };
     } catch (error: any) {
-      this.logger.warn(
-        `Failed to fetch origin/destination from OpenSky flights API: ${this.errorMessage(error)}`,
+      this.logger.debug(
+        `Recent flights lookup failed: ${this.errorMessage(error)}`,
       );
-      return {};
     }
+
+    return {};
+  }
+
+  /**
+   * Infer origin/destination airports from callsign pattern
+   * Many callsigns contain airport codes (e.g., "JFK123", "LAX456")
+   */
+  private inferAirportsFromCallsign(callsign: string): { origin?: NormalizedAirport; destination?: NormalizedAirport } {
+    const cleanCallsign = callsign.trim().toUpperCase();
+    
+    // Common patterns: airline code + number, or airport code + number
+    // Try to extract 3-letter codes that might be airports
+    const airportCodePattern = /([A-Z]{3})\d+/;
+    const match = cleanCallsign.match(airportCodePattern);
+    
+    if (match) {
+      const possibleCode = match[1];
+      // Check if it's a known airport code
+      const airport = this.mapAirportCodeToNormalized(possibleCode);
+      if (airport && airport.name !== possibleCode) {
+        // It's a valid airport - could be origin or destination
+        // For now, we can't determine which, so return as origin
+        return { origin: airport };
+      }
+    }
+
+    return {};
   }
 
   private mapAirportCodeToNormalized(code: string | null): NormalizedAirport | undefined {
     if (!code) return undefined;
+    
+    // Major airports database (ICAO codes)
+    const airportDatabase: Record<string, { name: string; city: string; country: string; iata?: string }> = {
+      // US Major Airports
+      'KJFK': { name: 'John F. Kennedy International', city: 'New York', country: 'United States', iata: 'JFK' },
+      'KLAX': { name: 'Los Angeles International', city: 'Los Angeles', country: 'United States', iata: 'LAX' },
+      'KORD': { name: "Chicago O'Hare International", city: 'Chicago', country: 'United States', iata: 'ORD' },
+      'KDFW': { name: 'Dallas/Fort Worth International', city: 'Dallas', country: 'United States', iata: 'DFW' },
+      'KDEN': { name: 'Denver International', city: 'Denver', country: 'United States', iata: 'DEN' },
+      'KSFO': { name: 'San Francisco International', city: 'San Francisco', country: 'United States', iata: 'SFO' },
+      'KSEA': { name: 'Seattle-Tacoma International', city: 'Seattle', country: 'United States', iata: 'SEA' },
+      'KATL': { name: 'Hartsfield-Jackson Atlanta International', city: 'Atlanta', country: 'United States', iata: 'ATL' },
+      'KMIA': { name: 'Miami International', city: 'Miami', country: 'United States', iata: 'MIA' },
+      'KBOS': { name: 'Logan International', city: 'Boston', country: 'United States', iata: 'BOS' },
+      'KIAD': { name: 'Washington Dulles International', city: 'Washington', country: 'United States', iata: 'IAD' },
+      'KEWR': { name: 'Newark Liberty International', city: 'Newark', country: 'United States', iata: 'EWR' },
+      'KPHX': { name: 'Phoenix Sky Harbor International', city: 'Phoenix', country: 'United States', iata: 'PHX' },
+      'KLAS': { name: 'McCarran International', city: 'Las Vegas', country: 'United States', iata: 'LAS' },
+      'KMSP': { name: 'Minneapolis-Saint Paul International', city: 'Minneapolis', country: 'United States', iata: 'MSP' },
+      'KDTW': { name: 'Detroit Metropolitan', city: 'Detroit', country: 'United States', iata: 'DTW' },
+      'KCLT': { name: 'Charlotte Douglas International', city: 'Charlotte', country: 'United States', iata: 'CLT' },
+      'KPHL': { name: 'Philadelphia International', city: 'Philadelphia', country: 'United States', iata: 'PHL' },
+      'KIAH': { name: 'George Bush Intercontinental', city: 'Houston', country: 'United States', iata: 'IAH' },
+      'KSLC': { name: 'Salt Lake City International', city: 'Salt Lake City', country: 'United States', iata: 'SLC' },
+      
+      // UK & Europe
+      'EGLL': { name: 'London Heathrow', city: 'London', country: 'United Kingdom', iata: 'LHR' },
+      'EGKK': { name: 'London Gatwick', city: 'London', country: 'United Kingdom', iata: 'LGW' },
+      'EGLC': { name: 'London City', city: 'London', country: 'United Kingdom', iata: 'LCY' },
+      'EGSS': { name: 'London Stansted', city: 'London', country: 'United Kingdom', iata: 'STN' },
+      'LFPG': { name: 'Paris Charles de Gaulle', city: 'Paris', country: 'France', iata: 'CDG' },
+      'LFPB': { name: 'Paris Orly', city: 'Paris', country: 'France', iata: 'ORY' },
+      'EDDF': { name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', iata: 'FRA' },
+      'EDDM': { name: 'Munich Airport', city: 'Munich', country: 'Germany', iata: 'MUC' },
+      'EHAM': { name: 'Amsterdam Schiphol', city: 'Amsterdam', country: 'Netherlands', iata: 'AMS' },
+      'EBBR': { name: 'Brussels Airport', city: 'Brussels', country: 'Belgium', iata: 'BRU' },
+      'LIRF': { name: 'Rome Fiumicino', city: 'Rome', country: 'Italy', iata: 'FCO' },
+      'LIMC': { name: 'Milan Malpensa', city: 'Milan', country: 'Italy', iata: 'MXP' },
+      'LEMD': { name: 'Madrid Barajas', city: 'Madrid', country: 'Spain', iata: 'MAD' },
+      'LEBL': { name: 'Barcelona El Prat', city: 'Barcelona', country: 'Spain', iata: 'BCN' },
+      'LOWW': { name: 'Vienna International', city: 'Vienna', country: 'Austria', iata: 'VIE' },
+      'LSZH': { name: 'Zurich Airport', city: 'Zurich', country: 'Switzerland', iata: 'ZRH' },
+      'EPWA': { name: 'Warsaw Chopin', city: 'Warsaw', country: 'Poland', iata: 'WAW' },
+      'EPKK': { name: 'Kraków John Paul II', city: 'Kraków', country: 'Poland', iata: 'KRK' },
+      'EKCH': { name: 'Copenhagen Kastrup', city: 'Copenhagen', country: 'Denmark', iata: 'CPH' },
+      'ESSA': { name: 'Stockholm Arlanda', city: 'Stockholm', country: 'Sweden', iata: 'ARN' },
+      'ENGM': { name: 'Oslo Gardermoen', city: 'Oslo', country: 'Norway', iata: 'OSL' },
+      'EFHK': { name: 'Helsinki Vantaa', city: 'Helsinki', country: 'Finland', iata: 'HEL' },
+      'LPPT': { name: 'Lisbon Portela', city: 'Lisbon', country: 'Portugal', iata: 'LIS' },
+      
+      // Middle East & Asia
+      'OMDB': { name: 'Dubai International', city: 'Dubai', country: 'United Arab Emirates', iata: 'DXB' },
+      'OTHH': { name: 'Hamad International', city: 'Doha', country: 'Qatar', iata: 'DOH' },
+      'OBBI': { name: 'Bahrain International', city: 'Manama', country: 'Bahrain', iata: 'BAH' },
+      'OEJN': { name: 'King Abdulaziz International', city: 'Jeddah', country: 'Saudi Arabia', iata: 'JED' },
+      'OERK': { name: 'King Khalid International', city: 'Riyadh', country: 'Saudi Arabia', iata: 'RUH' },
+      'ZBAA': { name: 'Beijing Capital', city: 'Beijing', country: 'China', iata: 'PEK' },
+      'ZSPD': { name: 'Shanghai Pudong', city: 'Shanghai', country: 'China', iata: 'PVG' },
+      'ZGGG': { name: 'Guangzhou Baiyun', city: 'Guangzhou', country: 'China', iata: 'CAN' },
+      'ZSSS': { name: 'Shanghai Hongqiao', city: 'Shanghai', country: 'China', iata: 'SHA' },
+      'RJTT': { name: 'Tokyo Haneda', city: 'Tokyo', country: 'Japan', iata: 'HND' },
+      'RJAA': { name: 'Tokyo Narita', city: 'Tokyo', country: 'Japan', iata: 'NRT' },
+      'RJBB': { name: 'Kansai International', city: 'Osaka', country: 'Japan', iata: 'KIX' },
+      'RKSI': { name: 'Incheon International', city: 'Seoul', country: 'South Korea', iata: 'ICN' },
+      'WSSS': { name: 'Singapore Changi', city: 'Singapore', country: 'Singapore', iata: 'SIN' },
+      'VTBS': { name: 'Suvarnabhumi', city: 'Bangkok', country: 'Thailand', iata: 'BKK' },
+      'WMKK': { name: 'Kuala Lumpur International', city: 'Kuala Lumpur', country: 'Malaysia', iata: 'KUL' },
+      'VIDP': { name: 'Indira Gandhi International', city: 'New Delhi', country: 'India', iata: 'DEL' },
+      'VABB': { name: 'Chhatrapati Shivaji Maharaj International', city: 'Mumbai', country: 'India', iata: 'BOM' },
+      'VHHH': { name: 'Hong Kong International', city: 'Hong Kong', country: 'Hong Kong', iata: 'HKG' },
+      'RCSS': { name: 'Taiwan Taoyuan International', city: 'Taipei', country: 'Taiwan', iata: 'TPE' },
+      
+      // Oceania
+      'YSSY': { name: 'Sydney Kingsford Smith', city: 'Sydney', country: 'Australia', iata: 'SYD' },
+      'YMML': { name: 'Melbourne Airport', city: 'Melbourne', country: 'Australia', iata: 'MEL' },
+      'YBBN': { name: 'Brisbane Airport', city: 'Brisbane', country: 'Australia', iata: 'BNE' },
+      'YPPH': { name: 'Perth Airport', city: 'Perth', country: 'Australia', iata: 'PER' },
+      'NZAA': { name: 'Auckland Airport', city: 'Auckland', country: 'New Zealand', iata: 'AKL' },
+      
+      // South America
+      'SBGR': { name: 'São Paulo Guarulhos', city: 'São Paulo', country: 'Brazil', iata: 'GRU' },
+      'SBGL': { name: 'Rio de Janeiro Galeão', city: 'Rio de Janeiro', country: 'Brazil', iata: 'GIG' },
+      'SAEZ': { name: 'Buenos Aires Ezeiza', city: 'Buenos Aires', country: 'Argentina', iata: 'EZE' },
+      'SCEL': { name: 'Santiago International', city: 'Santiago', country: 'Chile', iata: 'SCL' },
+      'SPIM': { name: 'Jorge Chávez International', city: 'Lima', country: 'Peru', iata: 'LIM' },
+      
+      // Africa
+      'FAOR': { name: 'O.R. Tambo International', city: 'Johannesburg', country: 'South Africa', iata: 'JNB' },
+      'HECA': { name: 'Cairo International', city: 'Cairo', country: 'Egypt', iata: 'CAI' },
+      'FMMI': { name: 'Ivato International', city: 'Antananarivo', country: 'Madagascar', iata: 'TNR' },
+      'DNMM': { name: 'Murtala Muhammed International', city: 'Lagos', country: 'Nigeria', iata: 'LOS' },
+    };
+    
+    const upperCode = code.toUpperCase();
+    const airport = airportDatabase[upperCode];
+    
+    if (airport) {
+      return {
+        code: upperCode,
+        icao: upperCode,
+        iata: airport.iata,
+        name: airport.name,
+        city: airport.city,
+        country: airport.country,
+      };
+    }
+    
+    // Fallback: return code as name if not in database
     return {
-      code,
-      icao: code,
-      name: code,
+      code: upperCode,
+      icao: upperCode,
+      name: upperCode,
     };
   }
 
