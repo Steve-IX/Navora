@@ -30,10 +30,14 @@ MAPBOX_ACCESS_TOKEN=your-mapbox-access-token-here
 # AviationStack API Configuration (for flight routing)
 AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
 
+# WeatherAPI Configuration (for weather data)
+WEATHERAPI_KEY=your-weatherapi-key-here
+
 # Frontend Environment Variables
 VITE_API_URL=http://localhost:3000
 VITE_MAPBOX_TOKEN=your-mapbox-access-token-here
 VITE_AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
+VITE_WEATHERAPI_KEY=your-weatherapi-key-here
 ```
 
 ## Backend .env File
@@ -63,6 +67,9 @@ MAPBOX_ACCESS_TOKEN=your-mapbox-access-token-here
 
 # AviationStack API Configuration (for flight routing)
 AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
+
+# WeatherAPI Configuration (for weather data)
+WEATHERAPI_KEY=your-weatherapi-key-here
 ```
 
 ## Frontend .env File
@@ -78,6 +85,9 @@ VITE_MAPBOX_TOKEN=your-mapbox-access-token-here
 
 # AviationStack API Configuration (for flight routing)
 VITE_AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
+
+# WeatherAPI Configuration (for weather data)
+VITE_WEATHERAPI_KEY=your-weatherapi-key-here
 ```
 
 ## Getting a Mapbox Access Token
@@ -92,11 +102,18 @@ VITE_AVIATIONSTACK_API_KEY=your-aviationstack-api-key-here
 2. Go to your dashboard and copy your API access key
 3. Use the token for `AVIATIONSTACK_API_KEY` and `VITE_AVIATIONSTACK_API_KEY`
 
+## Getting a WeatherAPI Key
+
+1. Sign up for a free account at [WeatherAPI](https://www.weatherapi.com/)
+2. Go to your dashboard and copy your API key
+3. Use the token for `WEATHERAPI_KEY` and `VITE_WEATHERAPI_KEY`
+
 ## Security Notes
 
 - **Never commit `.env` files to version control**
 - Use strong, unique `JWT_SECRET` values in production
 - Keep your Mapbox access token secure
 - Keep your AviationStack API key secure
+- Keep your WeatherAPI key secure
 - Rotate secrets regularly in production environments
 

@@ -1,56 +1,60 @@
 /**
- * Weather types for WeatherStack API integration
+ * Weather types for WeatherAPI.com integration
  */
 
-// Raw API response types from WeatherStack
-export interface WeatherStackLocation {
+// Raw API response types from WeatherAPI.com
+export interface WeatherAPILocation {
   name: string;
   country: string;
   region: string;
-  lat: string;
-  lon: string;
-  timezone_id: string;
+  lat: number;
+  lon: number;
+  tz_id: string;
   localtime: string;
   localtime_epoch: number;
-  utc_offset: string;
 }
 
-export interface WeatherStackCurrent {
-  observation_time: string;
-  temperature: number;
-  weather_code: number;
-  weather_icons: string[];
-  weather_descriptions: string[];
-  wind_speed: number;
+export interface WeatherAPICondition {
+  code: number;
+  text: string;
+  icon: string;
+}
+
+export interface WeatherAPICurrent {
+  last_updated: string;
+  last_updated_epoch: number;
+  temp_c: number;
+  temp_f: number;
+  feelslike_c: number;
+  feelslike_f: number;
+  condition: WeatherAPICondition;
+  wind_kph: number;
+  wind_mph: number;
   wind_degree: number;
   wind_dir: string;
-  pressure: number;
-  precip: number;
+  pressure_mb: number;
+  pressure_in: number;
+  precip_mm: number;
+  precip_in: number;
   humidity: number;
-  cloudcover: number;
-  feelslike: number;
-  uv_index: number;
-  visibility: number;
-  is_day: 'yes' | 'no';
+  cloud: number;
+  uv: number;
+  vis_km: number;
+  vis_miles: number;
+  is_day: number;
+  gust_kph: number;
+  gust_mph: number;
 }
 
-export interface WeatherStackResponse {
-  request: {
-    type: string;
-    query: string;
-    language: string;
-    unit: string;
-  };
-  location: WeatherStackLocation;
-  current: WeatherStackCurrent;
+export interface WeatherAPIResponse {
+  location: WeatherAPILocation;
+  current: WeatherAPICurrent;
 }
 
-export interface WeatherStackError {
-  success: false;
+export interface WeatherAPIError {
   error: {
     code: number;
-    type: string;
-    info: string;
+    message: string;
   };
 }
 

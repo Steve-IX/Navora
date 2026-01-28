@@ -280,6 +280,7 @@ DB_PASSWORD=postgres
 DB_NAME=gps_mapping
 JWT_SECRET=your-secret
 MAPBOX_ACCESS_TOKEN=your-token
+WEATHERAPI_KEY=your-weatherapi-key
 FRONTEND_URL=http://localhost:5173
 NODE_ENV=development
 DB_SYNCHRONIZE=true  # Auto-sync entities (dev only!)
@@ -290,6 +291,7 @@ RUN_DB_INIT=true     # Enable PostGIS setup
 ```
 VITE_API_URL=http://localhost:3000
 VITE_MAPBOX_TOKEN=your-token
+VITE_WEATHERAPI_KEY=your-weatherapi-key
 VITE_DEMO_MODE=false
 ```
 
